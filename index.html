@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>면접 질문 관리 시스템</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-top">
+            <div class="company-tabs">
+                <button class="company-tab active" data-company="all">전체</button>
+                <button class="company-tab" data-company="company1">기업1</button>
+                <button class="company-tab" data-company="company2">기업2</button>
+                <button class="add-company-btn" id="addCompanyBtn">+</button>
+            </div>
+            <div class="header-actions">
+                <button class="action-btn" id="printBtn">인쇄</button>
+                <button class="action-btn" id="questionsOnlyBtn">질문만 보기</button>
+                <button class="action-btn" id="batchAddBtn">일괄 추가</button>
+                <button class="action-btn" id="practiceBtn">실전 연습</button>
+            </div>
+        </div>
+        <div class="header-bottom">
+            <div class="folder-section">
+                <button class="folder-btn active" data-folder="all">전체</button>
+                <button class="folder-btn" data-folder="folder1">폴더1</button>
+                <button class="folder-btn" data-folder="folder2">폴더2</button>
+                <button class="add-folder-btn" id="addFolderBtn">+</button>
+                <select class="sort-dropdown" id="sortDropdown">
+                    <option value="default">기본</option>
+                    <option value="random">랜덤</option>
+                    <option value="alphabetical">가나다</option>
+                    <option value="length">글자수</option>
+                </select>
+            </div>
+            <div class="card-controls">
+                <button class="card-control-btn" id="addCardBtn">+</button>
+                <button class="card-control-btn" id="deleteCardBtn">×</button>
+                <button class="card-control-btn" id="trashBtn">휴지통</button>
+                <button class="card-control-btn" id="undoBtn">undo</button>
+                <button class="card-control-btn" id="redoBtn">redo</button>
+                <span class="card-count" id="cardCount">0개</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="cards-grid" id="cardsGrid"></div>
+    </div>
+
+    <!-- 우클릭 메뉴 -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" data-action="view">보기</div>
+        <div class="context-menu-item" data-action="pin">고정</div>
+        <div class="context-menu-item" data-action="copy">기업 복사</div>
+        <div class="context-menu-item" data-action="move">폴더 이동</div>
+        <div class="context-menu-item" data-action="edit">수정</div>
+        <div class="context-menu-item" data-action="delete">삭제</div>
+    </div>
+
+    <!-- 일괄 추가 모달 -->
+    <div class="modal" id="batchAddModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>일괄 추가</h2>
+                <button class="modal-close" id="batchAddClose">×</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="batchAddTextarea" placeholder="질문을 입력하세요 (줄바꿈으로 구분)"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="batchAddSubmit">추가</button>
+                <button class="modal-btn" id="batchAddCancel">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 실전 연습 설정 모달 -->
+    <div class="modal" id="practiceSettingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>실전 연습 설정</h2>
+                <button class="modal-close" id="practiceSettingsClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="practice-mode-selector">
+                    <label>
+                        <input type="radio" name="practiceMode" value="random" checked>
+                        완전 랜덤
+                    </label>
+                    <label>
+                        <input type="radio" name="practiceMode" value="folder">
+                        폴더별 개수 정하기
+                    </label>
+                </div>
+                <div class="folder-counts" id="folderCounts" style="display: none;">
+                    <!-- 동적으로 생성 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="practiceStartBtn">시작</button>
+                <button class="modal-btn" id="practiceSettingsCancel">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 실전 연습 모달 -->
+    <div class="modal" id="practiceModal">
+        <div class="modal-content practice-modal">
+            <div class="practice-header">
+                <button class="modal-close" id="practiceClose">×</button>
+            </div>
+            <div class="practice-body">
+                <div class="practice-question" id="practiceQuestion"></div>
+                <div class="practice-controls">
+                    <div class="stopwatch" id="stopwatch">00:00</div>
+                    <div class="practice-buttons">
+                        <button class="practice-btn pause-btn" id="pauseBtn">
+                            <img src="pause-icon.svg" alt="일시정지" class="icon-img">
+                        </button>
+                        <button class="practice-btn reset-btn" id="resetBtn">
+                            <img src="reset-icon.svg" alt="리셋" class="icon-img">
+                        </button>
+                        <button class="practice-btn next-btn" id="nextBtn">다음</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 카드 상세 보기 모달 -->
+    <div class="modal" id="cardDetailModal">
+        <div class="modal-content card-detail-modal">
+            <div class="modal-header">
+                <button class="modal-close" id="cardDetailClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-question" id="detailQuestion"></div>
+                <div class="detail-answer" id="detailAnswer"></div>
+            </div>
+        </div>
+        <button class="detail-nav-btn detail-nav-prev" id="prevCardBtn">◀</button>
+        <button class="detail-nav-btn detail-nav-next" id="nextCardBtn">▶</button>
+    </div>
+
+    <!-- 폴더 이동 모달 -->
+    <div class="modal" id="moveFolderModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>폴더 이동</h2>
+                <button class="modal-close" id="moveFolderClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="folder-list" id="moveFolderList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="moveFolderCancel">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 기업 복사 모달 -->
+    <div class="modal" id="copyCompanyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>기업 복사</h2>
+                <button class="modal-close" id="copyCompanyClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="company-list" id="copyCompanyList"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="copyCompanyCancel">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 휴지통 모달 -->
+    <div class="modal" id="trashModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>휴지통</h2>
+                <button class="modal-close" id="trashClose">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="trashCardList" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- 삭제된 카드 목록이 여기에 표시됨 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="trashEmptyBtn">휴지통 비우기</button>
+                <button class="modal-btn" id="trashCancel">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
