@@ -10,11 +10,19 @@ html {
     overflow-y: scroll;
 }
 
+:root {
+    --app-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #ffffff;
     color: #333;
     overflow-x: hidden;
+    font-family: var(--app-font-family);
+}
+
+* {
+    font-family: inherit;
 }
 
 /* 헤더 */
@@ -260,13 +268,33 @@ body {
 }
 
 .card.dragging {
-    opacity: 0.5;
+    opacity: 0.3;
     z-index: 1000;
     cursor: grabbing;
+    transform: scale(0.95);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
 .card:not(.dragging) {
     transition: transform 0.2s ease;
+}
+
+.card.drag-over-top {
+    border-top: 4px solid #007bff;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    margin-top: 8px;
+    background: #f0f7ff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.3);
+}
+
+.card.drag-over-bottom {
+    border-bottom: 4px solid #007bff;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    margin-bottom: 8px;
+    background: #f0f7ff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.3);
 }
 
 .card-question {
@@ -767,5 +795,46 @@ body {
 .toast.show {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+}
+
+/* 폰트 선택 모달 */
+.font-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    padding: 10px 0;
+}
+
+.font-option {
+    padding: 20px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.font-option:hover {
+    border-color: #2d5016;
+    background: #f5f5f5;
+}
+
+.font-option.selected {
+    border-color: #2d5016;
+    background: #e8f5e9;
+}
+
+.font-preview {
+    font-size: 24px;
+    margin-bottom: 10px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.font-name {
+    font-size: 14px;
+    color: #666;
 }
 
