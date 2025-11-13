@@ -17,12 +17,17 @@ let state = {
     selectedCards: new Set(),
     history: [],
     historyIndex: -1,
-    fontFamily: 'default'
+    fontFamily: 'default',
+    customFonts: [] // {id: string, name: string, fontFamily: string, data: string (base64)}
 };
 
 // 초기화
 function init() {
     loadState();
+    
+    // 이벤트 리스너를 먼저 등록 (다른 이벤트 핸들러보다 먼저 실행되도록)
+    setupGlobalEventListeners();
+    
     renderCompanies();
     renderFolders();
     renderCards();
@@ -33,6 +38,125 @@ function init() {
     updateTrashIcon();
     setupScrollbarGutter();
     updateQuestionsOnlyButton();
+}
+
+// 전역 이벤트 리스너 설정 (다른 이벤트 핸들러보다 먼저 실행)
+function setupGlobalEventListeners() {
+    // 질문만 보기, 일괄 추가, 실전 연습, 휴지통 - 이벤트 위임 사용 (캡처 단계)
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'questionsOnlyBtn' || e.target.closest('#questionsOnlyBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            toggleQuestionsOnly();
+            return;
+        }
+        if (e.target.id === 'batchAddBtn' || e.target.closest('#batchAddBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            showBatchAddModal();
+            return;
+        }
+        if (e.target.id === 'practiceBtn' || e.target.closest('#practiceBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            showPracticeSettings();
+            return;
+        }
+        if (e.target.id === 'trashBtn' || e.target.closest('#trashBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            showTrashModal();
+            return;
+        }
+        // 일괄 추가 모달의 추가 버튼
+        if (e.target.id === 'batchAddSubmit' || e.target.closest('#batchAddSubmit')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            submitBatchAdd();
+            return;
+        }
+        // 실전 연습 설정 모달의 시작 버튼
+        if (e.target.id === 'practiceStartBtn' || e.target.closest('#practiceStartBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            startPractice();
+            return;
+        }
+        // 실전 연습 모달의 버튼들
+        if (e.target.id === 'pauseBtn' || e.target.closest('#pauseBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            togglePause();
+            return;
+        }
+        if (e.target.id === 'resetBtn' || e.target.closest('#resetBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            resetTimer();
+            return;
+        }
+        if (e.target.id === 'nextBtn' || e.target.closest('#nextBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            nextPracticeQuestion();
+            return;
+        }
+        if (e.target.id === 'practiceClose' || e.target.closest('#practiceClose')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            stopTimer();
+            document.getElementById('practiceModal').classList.remove('show');
+            return;
+        }
+        // 휴지통 모달의 X 버튼
+        if (e.target.id === 'trashClose' || e.target.closest('#trashClose')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            document.getElementById('trashModal').classList.remove('show');
+            return;
+        }
+        // 폰트 버튼
+        if (e.target.id === 'fontBtn' || e.target.closest('#fontBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            showFontModal();
+            return;
+        }
+        // 폰트 모달의 X 버튼
+        if (e.target.id === 'fontClose' || e.target.closest('#fontClose')) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            document.getElementById('fontModal').classList.remove('show');
+            return;
+        }
+    }, true); // 캡처 단계에서 처리
+    
+    // Delete 키 - 선택된 카드 삭제
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Delete' && state.selectedCards.size > 0) {
+            // 모달이 열려있지 않은 경우에만 삭제
+            const openModals = document.querySelectorAll('.modal.show');
+            if (openModals.length === 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                deleteSelectedCards();
+            }
+        }
+    }, true); // 캡처 단계에서 처리
 }
 
 // 스크롤바 gutter 설정
@@ -68,12 +192,18 @@ function loadState() {
         state.history = loaded.history || [];
         state.historyIndex = loaded.historyIndex !== undefined ? loaded.historyIndex : -1;
         state.fontFamily = loaded.fontFamily || 'default';
+        state.customFonts = loaded.customFonts || [];
         
         // 기존 폴더에 companyId가 없으면 'all'로 설정 (마이그레이션)
         state.folders.forEach(folder => {
             if (!folder.companyId) {
                 folder.companyId = 'all';
             }
+        });
+        
+        // 커스텀 폰트 로드
+        state.customFonts.forEach(font => {
+            loadCustomFont(font);
         });
         
         // 폰트 적용
@@ -277,7 +407,7 @@ function renderCards() {
     }
     
     // 카드 생성
-    filteredCards.forEach(card => {
+    filteredCards.forEach((card, index) => {
         const cardEl = createCardElement(card);
         grid.appendChild(cardEl);
     });
@@ -286,6 +416,9 @@ function renderCards() {
     if (state.sortMode === 'default') {
         setupDragAndDrop();
     }
+    
+    // 카드 개수 업데이트
+    updateCardCount();
     
 }
 
@@ -299,7 +432,10 @@ function createCardElement(card) {
     
     const questionEl = document.createElement('div');
     questionEl.className = 'card-question';
-    questionEl.contentEditable = !state.selectedCards.has(card.id);
+    // 선택된 카드가 하나라도 있으면 모든 카드의 텍스트 편집 비활성화
+    questionEl.contentEditable = state.selectedCards.size === 0;
+    // 선택된 카드의 질문 영역만 드래그 가능하도록 설정
+    questionEl.draggable = state.selectedCards.has(card.id);
     // 줄바꿈을 포함한 텍스트를 제대로 표시하기 위해 innerHTML 사용
     if (card.question) {
         questionEl.innerHTML = card.question.replace(/\n/g, '<br>');
@@ -338,7 +474,10 @@ function createCardElement(card) {
     
     const answerEl = document.createElement('div');
     answerEl.className = 'card-answer';
-    answerEl.contentEditable = !state.selectedCards.has(card.id);
+    // 선택된 카드가 하나라도 있으면 모든 카드의 텍스트 편집 비활성화
+    answerEl.contentEditable = state.selectedCards.size === 0;
+    // 선택된 카드의 답변 영역만 드래그 가능하도록 설정
+    answerEl.draggable = state.selectedCards.has(card.id);
     // 줄바꿈을 포함한 텍스트를 제대로 표시하기 위해 innerHTML 사용
     if (card.answer) {
         answerEl.innerHTML = card.answer.replace(/\n/g, '<br>');
@@ -378,31 +517,23 @@ function createCardElement(card) {
     cardEl.appendChild(questionEl);
     cardEl.appendChild(answerEl);
     
+    // 드래그 핸들 제거됨 - 카드 전체에서 드래그 가능
+    
     // 질문/답변 영역 클릭 시 편집 모드 또는 선택 처리
     // 단, 더블클릭은 상세 보기로 처리
     let clickTimer = null;
     questionEl.addEventListener('click', (e) => {
-        // 선택된 카드의 질문 영역을 클릭한 경우 바로 선택 해제
-        // 먼저 체크하여 즉시 처리
-        const isSelected = state.selectedCards.has(card.id);
-        if (isSelected) {
-            // 더블클릭 타이머 취소
-            if (clickTimer) {
-                clearTimeout(clickTimer);
-                clickTimer = null;
-            }
-            e.stopPropagation();
+        // 선택된 카드가 하나라도 있으면 모든 카드의 텍스트 편집 방지 및 카드 선택으로 처리
+        if (state.selectedCards.size > 0) {
+            // 선택 상태에서는 편집 모드 진입 방지, 카드 선택으로 처리
             e.preventDefault();
-            // 선택 해제 직접 처리
-            if (state.selectedCards.size === 1) {
-                state.selectedCards.clear();
-            } else {
-                state.selectedCards.delete(card.id);
-            }
-            renderCards();
+            e.stopPropagation();
+            // 카드 선택 처리 (handleCardClick과 동일한 로직)
+            handleCardClick(e, card.id);
             return;
         }
         
+        // 선택된 카드가 없을 때만 편집 모드 허용
         // 더블클릭 감지를 위해 약간의 지연
         if (clickTimer) {
             clearTimeout(clickTimer);
@@ -416,9 +547,8 @@ function createCardElement(card) {
         // 단일 클릭은 약간의 지연 후 편집 모드로
         clickTimer = setTimeout(() => {
             clickTimer = null;
-            // 선택되지 않은 카드의 질문 영역 클릭 시 편집 모드로
             // 선택 상태가 변경되지 않았는지 다시 확인
-            if (!state.selectedCards.has(card.id)) {
+            if (state.selectedCards.size === 0) {
                 e.stopPropagation();
                 // 편집 모드로 들어가기 위해 포커스 설정
                 if (document.activeElement !== questionEl) {
@@ -429,27 +559,17 @@ function createCardElement(card) {
     });
     
     answerEl.addEventListener('click', (e) => {
-        // 선택된 카드의 답변 영역을 클릭한 경우 바로 선택 해제
-        // 먼저 체크하여 즉시 처리
-        const isSelected = state.selectedCards.has(card.id);
-        if (isSelected) {
-            // 더블클릭 타이머 취소
-            if (clickTimer) {
-                clearTimeout(clickTimer);
-                clickTimer = null;
-            }
-            e.stopPropagation();
+        // 선택된 카드가 하나라도 있으면 모든 카드의 텍스트 편집 방지 및 카드 선택으로 처리
+        if (state.selectedCards.size > 0) {
+            // 선택 상태에서는 편집 모드 진입 방지, 카드 선택으로 처리
             e.preventDefault();
-            // 선택 해제 직접 처리
-            if (state.selectedCards.size === 1) {
-                state.selectedCards.clear();
-            } else {
-                state.selectedCards.delete(card.id);
-            }
-            renderCards();
+            e.stopPropagation();
+            // 카드 선택 처리 (handleCardClick과 동일한 로직)
+            handleCardClick(e, card.id);
             return;
         }
         
+        // 선택된 카드가 없을 때만 편집 모드 허용
         // 더블클릭 감지를 위해 약간의 지연
         if (clickTimer) {
             clearTimeout(clickTimer);
@@ -463,9 +583,8 @@ function createCardElement(card) {
         // 단일 클릭은 약간의 지연 후 편집 모드로
         clickTimer = setTimeout(() => {
             clickTimer = null;
-            // 선택되지 않은 카드의 답변 영역 클릭 시 편집 모드로
             // 선택 상태가 변경되지 않았는지 다시 확인
-            if (!state.selectedCards.has(card.id)) {
+            if (state.selectedCards.size === 0) {
                 e.stopPropagation();
                 // 편집 모드로 들어가기 위해 포커스 설정
                 if (document.activeElement !== answerEl) {
@@ -570,17 +689,72 @@ function editCompany(companyId) {
         tab.textContent = originalText;
     };
     
-    // Enter 키만 저장되도록 - blur 이벤트 완전히 제거
+    // 편집 상태 플래그 및 cleanup 상태 플래그
+    let isEditing = true;
     let cleanupDone = false;
     
+    // 이벤트 핸들러 정의
+    let handleKeydown, handleBlur, handleOutsideClick;
+    
+    // cleanup 함수: 모든 이벤트 리스너 제거 및 상태 초기화
     const cleanup = () => {
         if (cleanupDone) return;
         cleanupDone = true;
-        document.removeEventListener('mousedown', handleOutsideClick, true);
+        isEditing = false;
+        
+        // keydown 이벤트 리스너 제거
+        if (handleKeydown) {
+            input.removeEventListener('keydown', handleKeydown, true);
+        }
+        // blur 이벤트 리스너 제거
+        if (handleBlur) {
+            input.removeEventListener('blur', handleBlur);
+        }
+        // document의 mousedown 리스너 제거
+        if (handleOutsideClick) {
+            document.removeEventListener('mousedown', handleOutsideClick, true);
+        }
+    };
+    
+    // 완료 상태 플래그 (중복 처리 방지)
+    let isFinishing = false;
+    
+    // blur 이벤트 핸들러: 포커스가 벗어나면 저장
+    handleBlur = () => {
+        // 이미 처리 중이거나 완료된 경우 무시
+        if (!isEditing || cleanupDone || isFinishing) return;
+        
+        isFinishing = true;
+        // cleanup을 먼저 호출하여 이벤트 리스너 제거
+        cleanup();
+        
+        // 저장 처리
+        finishEdit();
+    };
+    
+    // 외부 클릭 핸들러: 외부 클릭 시 저장 및 편집 종료
+    handleOutsideClick = (e) => {
+        if (!isEditing || cleanupDone || isFinishing) return;
+        
+        // input 필드 자체나 그 내부를 클릭한 경우는 저장하지 않음
+        // (편집 중에는 입력 필드를 다시 클릭해도 계속 수정할 수 있어야 함)
+        if (input.contains(e.target) || e.target === input) {
+            // 입력 필드 내부 클릭은 무시 (저장하지 않음)
+            return;
+        }
+        
+        // input 필드 외부를 클릭한 경우: 저장 및 편집 종료
+        isFinishing = true;
+        
+        // cleanup을 먼저 호출하여 이벤트 리스너 제거 (blur 이벤트 발생 방지)
+        cleanup();
+        
+        // 저장 처리
+        finishEdit();
     };
     
     // Enter/ESC 키 처리 - 캡처 단계에서 먼저 처리하여 다른 이벤트보다 우선
-    const handleKeydown = (e) => {
+    handleKeydown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
@@ -607,25 +781,6 @@ function editCompany(companyId) {
     // keydown 이벤트를 캡처 단계에서 먼저 처리
     input.addEventListener('keydown', handleKeydown, true);
     
-    // blur 이벤트 완전히 제거 - 대신 document mousedown으로 외부 클릭만 감지
-    let isEditing = true;
-    
-    const handleOutsideClick = (e) => {
-        if (!isEditing) return;
-        
-        // input 필드 자체나 그 내부를 클릭한 경우는 저장하지 않음
-        // (편집 중에는 입력 필드를 다시 클릭해도 계속 수정할 수 있어야 함)
-        if (input.contains(e.target) || e.target === input) {
-            // 입력 필드 내부 클릭은 무시 (저장하지 않음)
-            return;
-        }
-        
-        // input 필드 외부를 클릭한 경우 저장 처리
-        isEditing = false;
-        cleanup();
-        finishEdit();
-    };
-    
     // 입력 필드 클릭 시 탭의 click 이벤트가 발생하지 않도록 방지
     // (이렇게 하면 입력 필드를 클릭해도 switchCompany가 호출되지 않음)
     input.addEventListener('mousedown', (e) => {
@@ -638,14 +793,8 @@ function editCompany(companyId) {
         // 입력 필드 클릭은 저장하지 않음 (계속 편집 가능)
     });
     
-    // cleanup 함수 수정
-    const originalCleanup = cleanup;
-    cleanup = () => {
-        if (cleanupDone) return;
-        cleanupDone = true;
-        isEditing = false;
-        document.removeEventListener('mousedown', handleOutsideClick, true);
-    };
+    // blur 이벤트 리스너 추가: 포커스가 벗어나면 저장
+    input.addEventListener('blur', handleBlur);
     
     // document에 mousedown 리스너 추가 (캡처 단계에서 먼저 처리)
     // 약간의 지연을 주어 input이 먼저 렌더링되도록 함
@@ -776,11 +925,18 @@ function editFolder(folderId) {
             folder.name = input.value.trim();
             saveToHistory();
             saveState();
-            renderFolders();
         } else {
-            // 빈 값이면 취소 처리
-            cancelEdit();
+            // 빈 값이면 원래 이름 유지
+            // 새 폴더이고 원래 이름이 없었던 경우는 삭제
+            if (!folder.name) {
+                deleteFolder(folderId);
+                return;
+            }
+            // 원래 이름이 있던 경우는 원래 이름 유지
         }
+        
+        // 편집 상태 종료: renderFolders 호출하여 버튼을 다시 렌더링
+        renderFolders();
     };
     
     const cancelEdit = () => {
@@ -789,21 +945,76 @@ function editFolder(folderId) {
             // 원래 이름이 없었던 경우 (새 폴더)는 삭제
             deleteFolder(folderId);
         } else {
-            btn.textContent = originalText;
+            renderFolders();
         }
     };
     
-    // Enter 키만 저장되도록 - blur 이벤트 완전히 제거
+    // 편집 상태 플래그 및 cleanup 상태 플래그
+    let isEditing = true;
     let cleanupDone = false;
     
+    // 이벤트 핸들러 정의
+    let handleKeydown, handleBlur, handleOutsideClick;
+    
+    // cleanup 함수: 모든 이벤트 리스너 제거 및 상태 초기화
     const cleanup = () => {
         if (cleanupDone) return;
         cleanupDone = true;
-        document.removeEventListener('mousedown', handleOutsideClick, true);
+        isEditing = false;
+        
+        // keydown 이벤트 리스너 제거
+        if (handleKeydown) {
+            input.removeEventListener('keydown', handleKeydown, true);
+        }
+        // blur 이벤트 리스너 제거
+        if (handleBlur) {
+            input.removeEventListener('blur', handleBlur);
+        }
+        // document의 mousedown 리스너 제거
+        if (handleOutsideClick) {
+            document.removeEventListener('mousedown', handleOutsideClick, true);
+        }
+    };
+    
+    // 완료 상태 플래그 (중복 처리 방지)
+    let isFinishing = false;
+    
+    // blur 이벤트 핸들러: 포커스가 벗어나면 저장
+    handleBlur = () => {
+        // 이미 처리 중이거나 완료된 경우 무시
+        if (!isEditing || cleanupDone || isFinishing) return;
+        
+        isFinishing = true;
+        // cleanup을 먼저 호출하여 이벤트 리스너 제거
+        cleanup();
+        
+        // 저장 처리 (renderFolders 호출로 편집 상태 종료)
+        finishEdit();
+    };
+    
+    // 외부 클릭 핸들러: 외부 클릭 시 저장 및 편집 종료
+    handleOutsideClick = (e) => {
+        if (!isEditing || cleanupDone || isFinishing) return;
+        
+        // input 필드 자체나 그 내부를 클릭한 경우는 저장하지 않음
+        // (편집 중에는 입력 필드를 다시 클릭해도 계속 수정할 수 있어야 함)
+        if (input.contains(e.target) || e.target === input) {
+            // 입력 필드 내부 클릭은 무시 (저장하지 않음)
+            return;
+        }
+        
+        // input 필드 외부를 클릭한 경우: 저장 및 편집 종료
+        isFinishing = true;
+        
+        // cleanup을 먼저 호출하여 이벤트 리스너 제거 (blur 이벤트 발생 방지)
+        cleanup();
+        
+        // 저장 처리 (finishEdit에서 renderFolders 호출로 편집 상태 종료)
+        finishEdit();
     };
     
     // Enter/ESC 키 처리 - 캡처 단계에서 먼저 처리하여 다른 이벤트보다 우선
-    const handleKeydown = (e) => {
+    handleKeydown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
@@ -830,25 +1041,6 @@ function editFolder(folderId) {
     // keydown 이벤트를 캡처 단계에서 먼저 처리
     input.addEventListener('keydown', handleKeydown, true);
     
-    // blur 이벤트 완전히 제거 - 대신 document mousedown으로 외부 클릭만 감지
-    let isEditing = true;
-    
-    const handleOutsideClick = (e) => {
-        if (!isEditing) return;
-        
-        // input 필드 자체나 그 내부를 클릭한 경우는 저장하지 않음
-        // (편집 중에는 입력 필드를 다시 클릭해도 계속 수정할 수 있어야 함)
-        if (input.contains(e.target) || e.target === input) {
-            // 입력 필드 내부 클릭은 무시 (저장하지 않음)
-            return;
-        }
-        
-        // input 필드 외부를 클릭한 경우 저장 처리
-        isEditing = false;
-        cleanup();
-        finishEdit();
-    };
-    
     // 입력 필드 클릭 시 버튼의 click 이벤트가 발생하지 않도록 방지
     // (이렇게 하면 입력 필드를 클릭해도 switchFolder가 호출되지 않음)
     input.addEventListener('mousedown', (e) => {
@@ -861,14 +1053,8 @@ function editFolder(folderId) {
         // 입력 필드 클릭은 저장하지 않음 (계속 편집 가능)
     });
     
-    // cleanup 함수 수정
-    const originalCleanup = cleanup;
-    cleanup = () => {
-        if (cleanupDone) return;
-        cleanupDone = true;
-        isEditing = false;
-        document.removeEventListener('mousedown', handleOutsideClick, true);
-    };
+    // blur 이벤트 리스너 추가: 포커스가 벗어나면 저장
+    input.addEventListener('blur', handleBlur);
     
     // document에 mousedown 리스너 추가 (캡처 단계에서 먼저 처리)
     // 약간의 지연을 주어 input이 먼저 렌더링되도록 함
@@ -1014,9 +1200,10 @@ function toggleCardPin(cardId) {
     }
 }
 
-function moveCardToFolder(cardId) {
-    const card = state.cards.find(c => c.id === cardId);
-    if (!card) return;
+function moveCardToFolder(cardIds) {
+    // cardIds가 배열이 아니면 단일 카드로 처리
+    const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    if (ids.length === 0) return;
     
     const modal = document.getElementById('moveFolderModal');
     const list = document.getElementById('moveFolderList');
@@ -1027,10 +1214,16 @@ function moveCardToFolder(cardId) {
     allItem.className = 'folder-item';
     allItem.textContent = '전체';
     allItem.addEventListener('click', () => {
-        card.folderId = 'all';
+        ids.forEach(cardId => {
+            const card = state.cards.find(c => c.id === cardId);
+            if (card) {
+                card.folderId = 'all';
+            }
+        });
         saveToHistory();
         saveState();
         renderCards();
+        updateCardCount();
         modal.classList.remove('show');
     });
     list.appendChild(allItem);
@@ -1045,7 +1238,12 @@ function moveCardToFolder(cardId) {
         item.className = 'folder-item';
         item.textContent = folder.name;
         item.addEventListener('click', () => {
-            card.folderId = folder.id;
+            ids.forEach(cardId => {
+                const card = state.cards.find(c => c.id === cardId);
+                if (card) {
+                    card.folderId = folder.id;
+                }
+            });
             saveToHistory();
             saveState();
             renderCards();
@@ -1058,32 +1256,45 @@ function moveCardToFolder(cardId) {
     modal.classList.add('show');
 }
 
-function copyCardToCompany(cardId) {
-    const card = state.cards.find(c => c.id === cardId);
-    if (!card) return;
+function copyCardToCompany(cardIds) {
+    // cardIds가 배열이 아니면 단일 카드로 처리
+    const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    if (ids.length === 0) return;
+    
+    // 첫 번째 카드의 기업 ID 확인 (모든 카드가 같은 기업에 있는지 확인)
+    const firstCard = state.cards.find(c => c.id === ids[0]);
+    if (!firstCard) return;
     
     const modal = document.getElementById('copyCompanyModal');
     const list = document.getElementById('copyCompanyList');
     list.innerHTML = '';
     
     state.companies.forEach(company => {
-        if (company.id === card.companyId) return; // 같은 기업은 제외
+        if (company.id === firstCard.companyId) return; // 같은 기업은 제외
         
         const item = document.createElement('div');
         item.className = 'company-item';
         item.textContent = company.name;
         item.addEventListener('click', () => {
-            const newId = generateId();
             const maxOrder = state.cards.length > 0 
                 ? Math.max(...state.cards.map(c => c.order || 0))
                 : -1;
-            const newCard = {
-                ...card,
-                id: newId,
-                companyId: company.id,
-                order: maxOrder + 1
-            };
-            state.cards.push(newCard);
+            
+            // 모든 선택된 카드를 복사
+            ids.forEach((cardId, index) => {
+                const card = state.cards.find(c => c.id === cardId);
+                if (card) {
+                    const newId = generateId();
+                    const newCard = {
+                        ...card,
+                        id: newId,
+                        companyId: company.id,
+                        order: maxOrder + 1 + index
+                    };
+                    state.cards.push(newCard);
+                }
+            });
+            
             saveToHistory();
             saveState();
             renderCards();
@@ -1096,296 +1307,846 @@ function copyCardToCompany(cardId) {
     modal.classList.add('show');
 }
 
-// 드래그 앤 드롭
-let draggedCard = null;
-let draggedOverCard = null;
-let draggedCardElement = null;
-let dropPosition = null; // 'before' 또는 'after'
+// 드래그 앤 드롭 (새로 구현)
+let draggedCards = new Set(); // 선택된 카드들의 ID 집합
+let draggedCardElements = []; // 드래그 중인 카드 요소들
+let dropTargetIndex = null; // 드롭될 위치 인덱스
+let dragPreviewElements = []; // 드래그 미리보기 요소들 (마우스를 따라 움직임)
+let isDragging = false; // 드래그 중인지 여부
+let dragOffsetX = 0; // 드래그 시작 시 마우스 오프셋 X
+let dragOffsetY = 0; // 드래그 시작 시 마우스 오프셋 Y
+let originalCardPositions = new Map(); // 카드들의 원래 위치 저장
+let currentDropTarget = null; // 현재 드롭 타겟 카드 요소
 
-function updateDragPreview(draggedIndex, targetIndex) {
-    const allCards = Array.from(document.querySelectorAll('.card'));
-    const draggedEl = allCards.find(c => c.dataset.cardId === draggedCard);
+// 드래그 미리보기 요소 생성 (마우스를 따라 움직일 요소)
+function createDragPreview(cardElement) {
+    const preview = cardElement.cloneNode(true);
+    preview.classList.add('drag-preview');
+    preview.style.position = 'fixed';
+    preview.style.pointerEvents = 'none';
+    preview.style.zIndex = '10000';
+    preview.style.opacity = '0.9';
+    preview.style.transform = 'rotate(0deg)';
+    preview.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+    document.body.appendChild(preview);
+    return preview;
+}
+
+// 드래그 중 카드 위치 업데이트 (근처 카드들이 실시간으로 위치 조정)
+function updateCardPositions(insertIndex) {
+    const grid = document.getElementById('cardsGrid');
+    const allCards = Array.from(document.querySelectorAll('.card:not(.dragging)'));
     
-    if (!draggedEl) return;
+    if (allCards.length === 0) return;
     
-    // 드래그된 카드의 원래 위치 저장 (처음 한 번만)
-    if (!draggedEl._originalRect) {
-        const rect = draggedEl.getBoundingClientRect();
-        draggedEl._originalRect = {
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height
-        };
+    // 현재 필터링된 카드 목록 가져오기
+    let filteredCards = state.cards.filter(c => {
+        const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+        const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+        return companyMatch && folderMatch;
+    });
+    
+    filteredCards.sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return (a.order || 0) - (b.order || 0);
+    });
+    
+    // 선택된 카드들의 원래 인덱스
+    const selectedIndices = Array.from(draggedCards).map(id => {
+        const c = filteredCards.find(card => card.id === id);
+        return c ? filteredCards.indexOf(c) : -1;
+    }).filter(idx => idx >= 0).sort((a, b) => a - b);
+    
+    if (selectedIndices.length === 0) return;
+    
+    const minSelectedIndex = Math.min(...selectedIndices);
+    const maxSelectedIndex = Math.max(...selectedIndices);
+    
+    // insertIndex 조정 (선택된 카드들을 제외한 인덱스)
+    // insertIndex는 선택된 카드들을 포함한 전체 배열 기준 인덱스
+    // adjustedInsertIndex는 선택된 카드들이 제거된 후의 인덱스
+    let adjustedInsertIndex = insertIndex;
+    if (insertIndex > minSelectedIndex && insertIndex <= maxSelectedIndex + 1) {
+        // 선택된 카드 범위 내로 드롭하려는 경우, 선택된 카드들 앞으로 이동
+        adjustedInsertIndex = minSelectedIndex;
+    } else if (insertIndex > maxSelectedIndex) {
+        // 선택된 카드들보다 뒤로 드롭하려는 경우, 선택된 카드 개수만큼 빼기
+        adjustedInsertIndex = insertIndex - selectedIndices.length;
     }
     
-    // 모든 카드의 원래 위치 저장
+    // 모든 카드의 원래 위치 저장 (한 번만)
     allCards.forEach((card, index) => {
-        if (card.dataset.cardId === draggedCard) {
-            return; // 드래그된 카드는 건너뜀
-        }
-        
-        if (!card._originalRect) {
+        if (!originalCardPositions.has(card)) {
             const rect = card.getBoundingClientRect();
-            card._originalRect = {
+            originalCardPositions.set(card, {
                 top: rect.top,
                 left: rect.left,
                 width: rect.width,
-                height: rect.height
-            };
+                height: rect.height,
+                index: index
+            });
         }
     });
     
-    // 임시로 순서 변경하여 위치 계산
-    allCards.forEach((card, index) => {
-        if (card.dataset.cardId === draggedCard) {
-            return; // 드래그된 카드는 건너뜀
+    // DOM 카드와 필터링된 카드 데이터 매칭
+    const cardToDataIndex = new Map();
+    allCards.forEach((cardEl, domIndex) => {
+        const cardId = cardEl.dataset.cardId;
+        const dataIndex = filteredCards.findIndex(c => c.id === cardId);
+        if (dataIndex >= 0) {
+            cardToDataIndex.set(cardEl, dataIndex);
+        }
+    });
+    
+    // 각 카드의 새 위치 계산
+    // 드래그 중인 카드가 들어갈 위치를 기준으로 다른 카드들이 이동해야 함
+    allCards.forEach((card, domIndex) => {
+        const originalPos = originalCardPositions.get(card);
+        if (!originalPos) return;
+        
+        const dataIndex = cardToDataIndex.get(card);
+        if (dataIndex === undefined) return;
+        
+        // 선택된 카드 범위 내의 카드는 이동하지 않음 (드래그 중이므로)
+        if (dataIndex >= minSelectedIndex && dataIndex <= maxSelectedIndex) {
+            card.style.transform = '';
+            card.style.transition = '';
+            return;
         }
         
-        let previewIndex = index;
+        // 새 위치 계산
+        // 드래그 중인 카드가 원래 위치에서 제거되고, adjustedInsertIndex 위치로 이동
+        // 예: 1 2 3 4에서 2를 4 자리로 드래그하면
+        // - 2가 원래 위치(1)에서 제거됨
+        // - 3, 4가 왼쪽으로 이동 (인덱스 2->1, 3->2)
+        // - 2는 4 자리(인덱스 3)로 이동 중
         
-        // 드래그된 카드가 위에서 아래로 이동
-        if (draggedIndex < targetIndex) {
-            if (index > draggedIndex && index <= targetIndex) {
-                previewIndex = index - 1;
+        let newDataIndex = dataIndex;
+        
+        if (dataIndex < minSelectedIndex) {
+            // 선택된 카드들보다 위에 있는 카드
+            // adjustedInsertIndex가 현재 카드보다 뒤에 있으면 그대로 유지
+            // adjustedInsertIndex가 현재 카드보다 앞에 있으면 선택된 카드 개수만큼 오른쪽으로 이동
+            if (adjustedInsertIndex <= dataIndex) {
+                newDataIndex = dataIndex + selectedIndices.length;
+            }
+        } else if (dataIndex > maxSelectedIndex) {
+            // 선택된 카드들보다 아래에 있는 카드
+            // adjustedInsertIndex가 현재 카드보다 앞에 있으면 그대로 유지
+            // adjustedInsertIndex가 현재 카드보다 뒤에 있으면 선택된 카드 개수만큼 왼쪽으로 이동
+            // adjustedInsertIndex는 선택된 카드들이 제거된 후의 인덱스이므로,
+            // 원래 배열 기준으로는 adjustedInsertIndex + selectedIndices.length 위치
+            const originalInsertIndex = adjustedInsertIndex < minSelectedIndex 
+                ? adjustedInsertIndex 
+                : adjustedInsertIndex + selectedIndices.length;
+            
+            if (originalInsertIndex <= dataIndex) {
+                newDataIndex = dataIndex - selectedIndices.length;
             }
         }
-        // 드래그된 카드가 아래에서 위로 이동
-        else if (draggedIndex > targetIndex) {
-            if (index >= targetIndex && index < draggedIndex) {
-                previewIndex = index + 1;
-            }
-        }
         
-        // 새로운 위치에 있는 카드의 원래 위치 가져오기
-        const targetCard = allCards[previewIndex];
-        if (targetCard && targetCard._originalRect) {
-            const currentRect = card._originalRect;
-            const targetRect = targetCard._originalRect;
+        // 새 위치에 해당하는 DOM 카드 찾기
+        // newDataIndex는 선택된 카드들이 제거된 후의 배열 기준 인덱스
+        // 실제 filteredCards 배열에서 찾을 때는 선택된 카드들을 고려해야 함
+        if (newDataIndex !== dataIndex) {
+            let targetCardData = null;
             
-            const translateX = targetRect.left - currentRect.left;
-            const translateY = targetRect.top - currentRect.top;
+            if (newDataIndex < minSelectedIndex) {
+                // 선택된 카드들보다 위에 있는 위치
+                targetCardData = filteredCards[newDataIndex];
+            } else {
+                // 선택된 카드들보다 아래에 있는 위치
+                // 선택된 카드 개수만큼 인덱스 조정하여 실제 배열에서 찾기
+                const actualIndex = newDataIndex + selectedIndices.length;
+                if (actualIndex >= 0 && actualIndex < filteredCards.length) {
+                    targetCardData = filteredCards[actualIndex];
+                }
+            }
             
-            if (Math.abs(translateX) > 1 || Math.abs(translateY) > 1) {
-                card.style.transition = 'transform 0.15s ease';
-                card.style.transform = `translate(${translateX}px, ${translateY}px)`;
-                card.style.zIndex = '10';
+            if (targetCardData) {
+                const targetCardEl = allCards.find(c => c.dataset.cardId === targetCardData.id);
+                const targetPos = targetCardEl ? originalCardPositions.get(targetCardEl) : null;
+                
+                if (targetPos) {
+                    const translateY = targetPos.top - originalPos.top;
+                    if (Math.abs(translateY) > 1) {
+                        card.style.transition = 'transform 0.2s ease';
+                        card.style.transform = `translateY(${translateY}px)`;
+                    } else {
+                        card.style.transform = '';
+                        card.style.transition = '';
+                    }
+                } else {
+                    card.style.transform = '';
+                    card.style.transition = '';
+                }
             } else {
                 card.style.transform = '';
-                card.style.zIndex = '';
+                card.style.transition = '';
             }
+        } else {
+            // 원래 위치로
+            card.style.transform = '';
+            card.style.transition = '';
         }
     });
 }
 
 function setupDragAndDrop() {
     const cards = document.querySelectorAll('.card');
+    const grid = document.getElementById('cardsGrid');
+    
     cards.forEach(card => {
-        card.draggable = true;
+        const cardId = card.dataset.cardId;
+        const isSelected = state.selectedCards.has(cardId);
         
-        card.addEventListener('dragstart', (e) => {
-            draggedCard = card.dataset.cardId;
-            draggedCardElement = card;
-            card.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
+        // 선택된 카드만 드래그 가능하도록 설정
+        if (isSelected && state.selectedCards.size > 0) {
+            card.draggable = true;
+        } else {
+            card.draggable = false;
+        }
+        
+        // mousedown 이벤트로 드래그 시작 감지
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let isMouseDown = false;
+        let hasMoved = false;
+        
+        const handleMouseDown = (e) => {
+            // 선택된 카드가 아니면 무시
+            if (!state.selectedCards.has(cardId)) return;
             
-            // 드래그 이미지 설정
-            e.dataTransfer.setData('text/html', '');
+            // 텍스트 선택이 있으면 드래그 막음
+            const selection = window.getSelection();
+            if (selection && selection.toString().length > 0) {
+                return;
+            }
             
-            // 모든 카드의 원래 위치 저장
-            const allCards = document.querySelectorAll('.card');
-            allCards.forEach(c => {
-                const rect = c.getBoundingClientRect();
-                c._originalRect = {
-                    top: rect.top,
-                    left: rect.left,
-                    width: rect.width,
-                    height: rect.height
-                };
+            // 왼쪽 마우스 버튼만 처리
+            if (e.button !== 0) return;
+            
+            isMouseDown = true;
+            hasMoved = false;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            
+            // mousemove 이벤트로 드래그 시작 감지
+            const handleMouseMove = (e) => {
+                if (!isMouseDown) return;
+                
+                const deltaX = Math.abs(e.clientX - dragStartX);
+                const deltaY = Math.abs(e.clientY - dragStartY);
+                
+                // 일정 거리 이상 이동하면 드래그 시작
+                if (deltaX > 5 || deltaY > 5) {
+                    hasMoved = true;
+                    isMouseDown = false;
+                    
+                    // 드래그 시작
+                    startDrag(e, card);
+                    
+                    // 이벤트 리스너 제거
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                }
+            };
+            
+            const handleMouseUp = () => {
+                isMouseDown = false;
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            };
+            
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        };
+        
+        // 드래그 시작 함수
+        const startDrag = (e, sourceCard) => {
+            // 드래그 상태 초기화
+            isDragging = true;
+            draggedCards = new Set(state.selectedCards);
+            draggedCardElements = Array.from(document.querySelectorAll('.card.selected'));
+            dragPreviewElements = [];
+            originalCardPositions.clear();
+            
+            // 드래그 시작 시 마우스 오프셋 계산
+            const rect = sourceCard.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            
+            // 모든 선택된 카드에 dragging 클래스 추가 및 미리보기 생성
+            draggedCardElements.forEach((el, index) => {
+                el.classList.add('dragging');
+                el.style.opacity = '0.5';
+                
+                // 드래그 미리보기 생성 (마우스를 따라 움직일 요소)
+                const preview = createDragPreview(el);
+                const cardRect = el.getBoundingClientRect();
+                preview.style.left = (e.clientX - dragOffsetX) + 'px';
+                preview.style.top = (e.clientY - dragOffsetY + index * (cardRect.height + 20)) + 'px';
+                preview.style.width = cardRect.width + 'px';
+                dragPreviewElements.push(preview);
             });
-        });
-        
-        card.addEventListener('dragend', () => {
-            card.classList.remove('dragging');
             
-            // 모든 카드의 변환 효과 제거 및 원래 위치 정보 제거
+            // mousemove로 미리보기 업데이트 및 드롭 위치 계산
+            const handleDragMove = (e) => {
+                if (!isDragging) return;
+                
+                // 미리보기 위치 업데이트
+                draggedCardElements.forEach((el, index) => {
+                    const preview = dragPreviewElements[index];
+                    if (preview) {
+                        const cardRect = el.getBoundingClientRect();
+                        preview.style.left = (e.clientX - dragOffsetX) + 'px';
+                        preview.style.top = (e.clientY - dragOffsetY + index * (cardRect.height + 20)) + 'px';
+                    }
+                });
+                
+                // 드롭 위치 계산 (dragover와 동일한 로직)
+                const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+                const targetCard = elementBelow?.closest('.card:not(.dragging)');
+                
+                // 이전 타겟 카드의 점선 테두리 제거
+                if (currentDropTarget && currentDropTarget !== targetCard) {
+                    currentDropTarget.classList.remove('drop-target');
+                    currentDropTarget = null;
+                }
+                
+                if (targetCard && !draggedCards.has(targetCard.dataset.cardId)) {
+                    // 새 타겟 카드에 점선 테두리 추가
+                    if (currentDropTarget !== targetCard) {
+                        targetCard.classList.add('drop-target');
+                        currentDropTarget = targetCard;
+                    }
+                    
+                    // 현재 필터링된 카드 목록 가져오기
+                    let filteredCards = state.cards.filter(c => {
+                        const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                        const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                        return companyMatch && folderMatch;
+                    });
+                    
+                    filteredCards.sort((a, b) => {
+                        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                        return (a.order || 0) - (b.order || 0);
+                    });
+                    
+                    const targetCardData = filteredCards.find(c => c.id === targetCard.dataset.cardId);
+                    if (targetCardData) {
+                        const targetIndex = filteredCards.indexOf(targetCardData);
+                        
+                        // 선택된 카드들의 원래 인덱스
+                        const selectedIndices = Array.from(draggedCards).map(id => {
+                            const c = filteredCards.find(card => card.id === id);
+                            return c ? filteredCards.indexOf(c) : -1;
+                        }).filter(idx => idx >= 0).sort((a, b) => a - b);
+                        
+                        let insertIndex;
+                        if (selectedIndices.length > 0) {
+                            const minSelectedIndex = Math.min(...selectedIndices);
+                            const maxSelectedIndex = Math.max(...selectedIndices);
+                            
+                            // 앞에서 뒤로 갈 때: 타겟 카드 뒤에 드롭
+                            // 뒤에서 앞으로 갈 때: 타겟 카드 위치에 드롭
+                            if (maxSelectedIndex < targetIndex) {
+                                // 앞에서 뒤로: 타겟 뒤에 (타겟 인덱스 + 1)
+                                insertIndex = targetIndex + 1;
+                            } else if (minSelectedIndex > targetIndex) {
+                                // 뒤에서 앞으로: 타겟 위치에
+                                insertIndex = targetIndex;
+                            } else {
+                                // 선택된 카드 범위 내: 타겟 위치에
+                                insertIndex = targetIndex;
+                            }
+                        } else {
+                            insertIndex = targetIndex;
+                        }
+                        
+                        dropTargetIndex = insertIndex;
+                        updateCardPositions(insertIndex);
+                    }
+                } else {
+                    // 그리드 영역에 드롭 (타겟 카드가 없을 때)
+                    if (currentDropTarget) {
+                        currentDropTarget.classList.remove('drop-target');
+                        currentDropTarget = null;
+                    }
+                    const allCards = Array.from(document.querySelectorAll('.card:not(.dragging)'));
+                    dropTargetIndex = allCards.length;
+                    updateCardPositions(dropTargetIndex);
+                }
+            };
+            
+            // mouseup으로 드롭 처리
+            const handleDragEnd = (e) => {
+                if (!isDragging) return;
+                
+                isDragging = false;
+                
+                // 점선 테두리 제거
+                if (currentDropTarget) {
+                    currentDropTarget.classList.remove('drop-target');
+                    currentDropTarget = null;
+                }
+                
+                // 드롭 처리
+                if (dropTargetIndex !== null && draggedCards.size > 0) {
+                    // 현재 필터링된 카드 목록 가져오기
+                    let filteredCards = state.cards.filter(c => {
+                        const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                        const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                        return companyMatch && folderMatch;
+                    });
+                    
+                    filteredCards.sort((a, b) => {
+                        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                        return (a.order || 0) - (b.order || 0);
+                    });
+                    
+                    // 선택된 카드들 찾기
+                    const selectedCards = filteredCards.filter(c => draggedCards.has(c.id));
+                    if (selectedCards.length > 0) {
+                        // 선택된 카드들의 원래 인덱스
+                        const selectedIndices = selectedCards.map(c => filteredCards.indexOf(c)).sort((a, b) => a - b);
+                        const minSelectedIndex = Math.min(...selectedIndices);
+                        const maxSelectedIndex = Math.max(...selectedIndices);
+                        
+                        // 선택된 카드들을 배열에서 제거
+                        selectedCards.forEach(c => {
+                            const index = filteredCards.indexOf(c);
+                            if (index >= 0) filteredCards.splice(index, 1);
+                        });
+                        
+                        // dropTargetIndex 조정
+                        // dropTargetIndex는 선택된 카드들을 포함한 전체 배열 기준 인덱스
+                        // 선택된 카드들을 제거한 후의 인덱스로 조정해야 함
+                        let adjustedInsertIndex = dropTargetIndex;
+                        
+                        if (maxSelectedIndex < dropTargetIndex) {
+                            // 앞에서 뒤로: 선택된 카드들보다 뒤에 드롭
+                            // dropTargetIndex가 선택된 카드들보다 뒤에 있으므로, 선택된 카드 개수만큼 빼기
+                            adjustedInsertIndex = dropTargetIndex - selectedCards.length;
+                        } else if (minSelectedIndex > dropTargetIndex) {
+                            // 뒤에서 앞으로: 선택된 카드들보다 앞에 드롭
+                            // dropTargetIndex가 선택된 카드들보다 앞에 있으므로, 그대로 유지
+                            adjustedInsertIndex = dropTargetIndex;
+                        } else {
+                            // 선택된 카드 범위 내에 드롭: 선택된 카드들 앞으로
+                            adjustedInsertIndex = minSelectedIndex;
+                        }
+                        
+                        adjustedInsertIndex = Math.max(0, Math.min(adjustedInsertIndex, filteredCards.length));
+                        
+                        // 새 위치에 삽입
+                        filteredCards.splice(adjustedInsertIndex, 0, ...selectedCards);
+                        
+                        // 필터링되지 않은 카드들
+                        const nonFilteredCards = state.cards.filter(c => {
+                            const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                            const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                            return !(companyMatch && folderMatch);
+                        });
+                        
+                        // 필터링된 카드들의 order 업데이트
+                        filteredCards.forEach((c, i) => {
+                            c.order = i;
+                        });
+                        
+                        // state.cards 재정렬
+                        const maxOrder = Math.max(...filteredCards.map(c => c.order || 0), -1);
+                        nonFilteredCards.forEach((c, i) => {
+                            c.order = maxOrder + 1 + i;
+                        });
+                        
+                        state.cards.sort((a, b) => {
+                            return (a.order || 0) - (b.order || 0);
+                        });
+                        
+                        saveToHistory();
+                        saveState();
+                        renderCards();
+                    }
+                }
+                
+                // 드래그 미리보기 제거
+                dragPreviewElements.forEach(preview => {
+                    if (preview && preview.parentNode) {
+                        preview.remove();
+                    }
+                });
+                dragPreviewElements = [];
+                
+                // 모든 드래그 중인 카드 복원
+                draggedCardElements.forEach(el => {
+                    el.classList.remove('dragging');
+                    el.style.opacity = '';
+                    el.style.pointerEvents = '';
+                    el.style.transform = '';
+                    el.style.transition = '';
+                });
+                
+                // 모든 카드의 변환 효과 제거
+                document.querySelectorAll('.card').forEach(c => {
+                    c.style.transform = '';
+                    c.style.transition = '';
+                    c.style.zIndex = '';
+                });
+                
+                // 원래 위치 정보 초기화
+                originalCardPositions.clear();
+                
+                draggedCards.clear();
+                draggedCardElements = [];
+                dropTargetIndex = null;
+                
+                // 이벤트 리스너 제거
+                document.removeEventListener('mousemove', handleDragMove);
+                document.removeEventListener('mouseup', handleDragEnd);
+            };
+            
+            document.addEventListener('mousemove', handleDragMove);
+            document.addEventListener('mouseup', handleDragEnd);
+        };
+        
+        // mousedown 이벤트 추가 (카드 전체)
+        card.addEventListener('mousedown', handleMouseDown);
+        
+        // HTML5 drag 이벤트도 처리 (백업용)
+        const handleDragStart = (e) => {
+            // 선택된 카드가 아니면 드래그 막음
+            if (!state.selectedCards.has(cardId)) {
+                e.preventDefault();
+                return;
+            }
+            
+            // 이미 mousedown으로 시작했으면 무시
+            if (isDragging) return;
+            
+            // 텍스트 선택이 있으면 드래그 막음
+            const selection = window.getSelection();
+            if (selection && selection.toString().length > 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            
+            // 드래그 상태 초기화
+            isDragging = true;
+            draggedCards = new Set(state.selectedCards);
+            draggedCardElements = Array.from(document.querySelectorAll('.card.selected'));
+            dragPreviewElements = [];
+            originalCardPositions.clear();
+            
+            // 드래그 시작 시 마우스 오프셋 계산
+            const rect = card.getBoundingClientRect();
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            
+            // 모든 선택된 카드에 dragging 클래스 추가 및 미리보기 생성
+            draggedCardElements.forEach((el, index) => {
+                el.classList.add('dragging');
+                el.style.opacity = '0.5';
+                
+                // 드래그 미리보기 생성 (마우스를 따라 움직일 요소)
+                const preview = createDragPreview(el);
+                const cardRect = el.getBoundingClientRect();
+                preview.style.left = (e.clientX - dragOffsetX) + 'px';
+                preview.style.top = (e.clientY - dragOffsetY + index * (cardRect.height + 20)) + 'px';
+                preview.style.width = cardRect.width + 'px';
+                dragPreviewElements.push(preview);
+            });
+            
+            // 드래그 이미지 숨기기 (커스텀 미리보기 사용)
+            const dragImage = document.createElement('div');
+            dragImage.style.position = 'absolute';
+            dragImage.style.top = '-1000px';
+            dragImage.style.width = '1px';
+            dragImage.style.height = '1px';
+            document.body.appendChild(dragImage);
+            e.dataTransfer.setDragImage(dragImage, 0, 0);
+            setTimeout(() => dragImage.remove(), 0);
+            
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', '');
+        };
+        
+        // HTML5 드래그 이벤트 처리
+        card.addEventListener('dragstart', handleDragStart);
+        
+        // 드래그 종료
+        const handleDragEnd = () => {
+            isDragging = false;
+            
+            // 드래그 미리보기 제거
+            dragPreviewElements.forEach(preview => {
+                if (preview && preview.parentNode) {
+                    preview.remove();
+                }
+            });
+            dragPreviewElements = [];
+            
+            // 모든 드래그 중인 카드 복원
+            draggedCardElements.forEach(el => {
+                el.classList.remove('dragging');
+                el.style.opacity = '';
+                el.style.pointerEvents = '';
+                el.style.transform = '';
+                el.style.transition = '';
+            });
+            
+            // 모든 카드의 변환 효과 제거 및 원래 위치로 복원
             document.querySelectorAll('.card').forEach(c => {
                 c.style.transform = '';
                 c.style.transition = '';
-                c.style.borderTop = '';
-                c.style.borderBottom = '';
                 c.style.zIndex = '';
-                delete c._originalRect;
             });
             
-            draggedCard = null;
-            draggedOverCard = null;
-            draggedCardElement = null;
-            dropPosition = null;
-        });
+            // 원래 위치 정보 초기화
+            originalCardPositions.clear();
+            
+            draggedCards.clear();
+            draggedCardElements = [];
+            dropTargetIndex = null;
+        };
         
+        // 카드 전체에만 dragend 이벤트 추가
+        card.addEventListener('dragend', handleDragEnd);
+        
+        // 드래그 오버
         card.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.dataTransfer.dropEffect = 'move';
             
-            if (!draggedCard || draggedCard === card.dataset.cardId) return;
+            // 드래그 미리보기 위치 업데이트 (마우스를 따라 움직임)
+            if (isDragging && dragPreviewElements.length > 0) {
+                draggedCardElements.forEach((el, index) => {
+                    const preview = dragPreviewElements[index];
+                    if (preview) {
+                        const cardRect = el.getBoundingClientRect();
+                        preview.style.left = (e.clientX - dragOffsetX) + 'px';
+                        preview.style.top = (e.clientY - dragOffsetY + index * (cardRect.height + 20)) + 'px';
+                    }
+                });
+            }
             
-            const allCards = Array.from(document.querySelectorAll('.card'));
-            const draggedEl = allCards.find(c => c.dataset.cardId === draggedCard);
-            const currentEl = card;
+            // 선택된 카드 중 하나인지 확인
+            if (draggedCards.has(card.dataset.cardId)) return;
             
-            if (!draggedEl) return;
-            
-            const draggedIndex = allCards.indexOf(draggedEl);
-            const targetIndex = allCards.indexOf(currentEl);
-            
-            // 모든 카드에서 드래그 오버 클래스 제거
-            document.querySelectorAll('.card').forEach(c => {
-                c.classList.remove('drag-over-top', 'drag-over-bottom');
-                c.style.borderTop = '';
-                c.style.borderBottom = '';
-                c.style.marginTop = '';
-                c.style.marginBottom = '';
+            // 현재 필터링된 카드 목록 가져오기
+            let filteredCards = state.cards.filter(c => {
+                const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                return companyMatch && folderMatch;
             });
             
-            draggedOverCard = card.dataset.cardId;
+            filteredCards.sort((a, b) => {
+                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                return (a.order || 0) - (b.order || 0);
+            });
             
-            // 드래그 방향에 따라 보더 표시 및 삽입 위치 저장
+            // 현재 카드의 인덱스 찾기
+            const targetCard = filteredCards.find(c => c.id === card.dataset.cardId);
+            if (!targetCard) return;
+            
+            const targetIndex = filteredCards.indexOf(targetCard);
+            
+            // 선택된 카드들의 인덱스
+            const selectedIndices = Array.from(draggedCards).map(id => {
+                const c = filteredCards.find(card => card.id === id);
+                return c ? filteredCards.indexOf(c) : -1;
+            }).filter(idx => idx >= 0).sort((a, b) => a - b);
+            
+            if (selectedIndices.length === 0) return;
+            
+            // 드롭 위치 결정 (카드의 중앙을 기준으로 위/아래 결정)
             const rect = card.getBoundingClientRect();
             const mouseY = e.clientY;
             const cardMiddleY = rect.top + rect.height / 2;
             
+            let insertIndex;
             if (mouseY < cardMiddleY) {
-                // 카드 위쪽에 마우스: 카드 위에 삽입 (before)
-                card.classList.add('drag-over-top');
-                dropPosition = 'before';
+                // 카드 위에 삽입
+                insertIndex = targetIndex;
             } else {
-                // 카드 아래쪽에 마우스: 카드 아래에 삽입 (after)
-                card.classList.add('drag-over-bottom');
-                dropPosition = 'after';
+                // 카드 아래에 삽입
+                insertIndex = targetIndex + 1;
             }
             
-            // 카드들의 위치 미리보기 업데이트 (드래그 방향 기반)
-            if (draggedIndex < targetIndex && dropPosition === 'after') {
-                // 아래로 드래그: target 아래에 삽입
-                updateDragPreview(draggedIndex, targetIndex + 1);
-            } else if (draggedIndex > targetIndex && dropPosition === 'before') {
-                // 위로 드래그: target 위에 삽입
-                updateDragPreview(draggedIndex, targetIndex);
-            } else {
-                updateDragPreview(draggedIndex, targetIndex);
-            }
+            dropTargetIndex = insertIndex;
+            
+            // 근처 카드들의 위치 실시간 업데이트
+            updateCardPositions(insertIndex);
         });
         
+        // 드래그 리브
         card.addEventListener('dragleave', (e) => {
-            // 같은 카드 내부가 아닌 다른 곳으로 이동한 경우
             const rect = card.getBoundingClientRect();
             const x = e.clientX;
             const y = e.clientY;
             
-            // 카드 영역 밖으로 나간 경우
             if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-                card.classList.remove('drag-over-top', 'drag-over-bottom');
-                card.style.borderTop = '';
-                card.style.borderBottom = '';
-                card.style.marginTop = '';
-                card.style.marginBottom = '';
+                // 카드 영역 밖으로 나간 경우
             }
         });
         
+        // 드롭
         card.addEventListener('drop', (e) => {
             e.preventDefault();
             e.stopPropagation();
             
-            // 드롭 위치 재계산 (마우스 위치 기준)
-            const rect = card.getBoundingClientRect();
-            const mouseY = e.clientY;
-            const cardMiddleY = rect.top + rect.height / 2;
+            if (draggedCards.size === 0 || dropTargetIndex === null) return;
             
-            if (mouseY < cardMiddleY) {
-                dropPosition = 'before';
-            } else {
-                dropPosition = 'after';
-            }
-            
-            draggedOverCard = card.dataset.cardId;
-            
-            // 모든 카드에서 드래그 오버 클래스 및 스타일 제거
-            document.querySelectorAll('.card').forEach(c => {
-                c.classList.remove('drag-over-top', 'drag-over-bottom');
-                c.style.borderTop = '';
-                c.style.borderBottom = '';
-                c.style.marginTop = '';
-                c.style.marginBottom = '';
-                c.style.transform = '';
-                c.style.transition = '';
+            // 현재 필터링된 카드 목록 가져오기
+            let filteredCards = state.cards.filter(c => {
+                const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                return companyMatch && folderMatch;
             });
             
-            if (draggedCard && draggedOverCard && dropPosition) {
+            filteredCards.sort((a, b) => {
+                if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+                return (a.order || 0) - (b.order || 0);
+            });
+            
+            // 선택된 카드들 찾기
+            const selectedCards = filteredCards.filter(c => draggedCards.has(c.id));
+            if (selectedCards.length === 0) return;
+            
+            // 선택된 카드들의 원래 인덱스
+            const selectedIndices = selectedCards.map(c => filteredCards.indexOf(c)).sort((a, b) => a - b);
+            const minSelectedIndex = Math.min(...selectedIndices);
+            const maxSelectedIndex = Math.max(...selectedIndices);
+            
+            // 선택된 카드들을 배열에서 제거
+            selectedCards.forEach(c => {
+                const index = filteredCards.indexOf(c);
+                if (index >= 0) filteredCards.splice(index, 1);
+            });
+            
+            // dropTargetIndex 조정 (제거된 카드들 고려)
+            let adjustedInsertIndex = dropTargetIndex;
+            if (dropTargetIndex > minSelectedIndex) {
+                adjustedInsertIndex = dropTargetIndex - selectedCards.length;
+            }
+            adjustedInsertIndex = Math.max(0, Math.min(adjustedInsertIndex, filteredCards.length));
+            
+            // 새 위치에 삽입
+            filteredCards.splice(adjustedInsertIndex, 0, ...selectedCards);
+            
+            // 필터링되지 않은 카드들
+            const nonFilteredCards = state.cards.filter(c => {
+                const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
+                return !(companyMatch && folderMatch);
+            });
+            
+            // 필터링된 카드들의 order 업데이트
+            filteredCards.forEach((c, i) => {
+                c.order = i;
+            });
+            
+            // state.cards 재정렬
+            const maxOrder = Math.max(...filteredCards.map(c => c.order || 0), -1);
+            nonFilteredCards.forEach((c, i) => {
+                c.order = maxOrder + 1 + i;
+            });
+            
+            state.cards.sort((a, b) => {
+                return (a.order || 0) - (b.order || 0);
+            });
+            
+            saveToHistory();
+            saveState();
+            renderCards();
+        });
+    });
+    
+    // 그리드에 드롭 (빈 공간)
+    if (grid) {
+        grid.addEventListener('dragover', (e) => {
+            // 그리드 영역이거나 카드가 아닌 곳에 드래그 오버
+            if (e.target === grid || (!e.target.closest('.card') && e.target !== grid)) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+                
+                // 드래그 미리보기 위치 업데이트
+                if (isDragging && dragPreviewElements.length > 0) {
+                    draggedCardElements.forEach((el, index) => {
+                        const preview = dragPreviewElements[index];
+                        if (preview) {
+                            const cardRect = el.getBoundingClientRect();
+                            preview.style.left = (e.clientX - dragOffsetX) + 'px';
+                            preview.style.top = (e.clientY - dragOffsetY + index * (cardRect.height + 20)) + 'px';
+                        }
+                    });
+                }
+                
+                // 마지막 위치에 삽입
+                const allCards = Array.from(document.querySelectorAll('.card:not(.dragging)'));
+                const insertIndex = allCards.length;
+                
+                dropTargetIndex = insertIndex;
+                updateCardPositions(insertIndex);
+            }
+        });
+        
+        grid.addEventListener('drop', (e) => {
+            if (e.target === grid || e.target.classList.contains('drag-placeholder')) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (draggedCards.size === 0 || dropTargetIndex === null) return;
+                
                 // 현재 필터링된 카드 목록 가져오기
-                let filteredCards = state.cards.filter(card => {
-                    const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-                    const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+                let filteredCards = state.cards.filter(c => {
+                    const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                    const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
                     return companyMatch && folderMatch;
                 });
                 
-                // 기본 정렬 (고정된 카드 먼저, 그 다음 order)
                 filteredCards.sort((a, b) => {
                     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
                     return (a.order || 0) - (b.order || 0);
                 });
                 
-                const dragged = filteredCards.find(c => c.id === draggedCard);
-                const target = filteredCards.find(c => c.id === draggedOverCard);
+                const selectedCards = filteredCards.filter(c => draggedCards.has(c.id));
+                if (selectedCards.length === 0) return;
                 
-                if (!dragged || !target) return;
+                const selectedIndices = selectedCards.map(c => filteredCards.indexOf(c)).sort((a, b) => a - b);
+                const minSelectedIndex = Math.min(...selectedIndices);
                 
-                const draggedIndex = filteredCards.indexOf(dragged);
-                const targetIndex = filteredCards.indexOf(target);
+                selectedCards.forEach(c => {
+                    const index = filteredCards.indexOf(c);
+                    if (index >= 0) filteredCards.splice(index, 1);
+                });
                 
-                if (draggedIndex === targetIndex) return;
-                
-                // dragged를 배열에서 제거
-                filteredCards.splice(draggedIndex, 1);
-                
-                // dropPosition에 따라 삽입 위치 계산
-                // dragged를 제거한 후의 targetIndex를 기준으로 계산
-                const newTargetIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
-                
-                let insertIndex;
-                if (dropPosition === 'before') {
-                    // 타겟 카드 위에 삽입
-                    insertIndex = newTargetIndex;
-                } else {
-                    // 타겟 카드 아래에 삽입
-                    insertIndex = newTargetIndex + 1;
+                let adjustedInsertIndex = dropTargetIndex;
+                if (dropTargetIndex > minSelectedIndex) {
+                    adjustedInsertIndex = dropTargetIndex - selectedCards.length;
                 }
+                adjustedInsertIndex = Math.max(0, Math.min(adjustedInsertIndex, filteredCards.length));
                 
-                // 계산된 위치에 삽입 (범위 체크)
-                insertIndex = Math.max(0, Math.min(insertIndex, filteredCards.length));
-                filteredCards.splice(insertIndex, 0, dragged);
+                filteredCards.splice(adjustedInsertIndex, 0, ...selectedCards);
                 
-                // 필터링된 카드 목록의 순서를 state.cards에 반영
-                // 먼저 필터링되지 않은 카드들을 찾아서 그들의 order를 유지
-                const nonFilteredCards = state.cards.filter(card => {
-                    const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-                    const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+                const nonFilteredCards = state.cards.filter(c => {
+                    const companyMatch = state.currentCompany === 'all' || c.companyId === state.currentCompany;
+                    const folderMatch = state.currentFolder === 'all' || c.folderId === state.currentFolder;
                     return !(companyMatch && folderMatch);
                 });
                 
-                // 필터링된 카드들의 order를 새 순서로 업데이트
                 filteredCards.forEach((c, i) => {
                     c.order = i;
                 });
                 
-                // state.cards를 재정렬: 필터링된 카드들을 먼저, 그 다음 필터링되지 않은 카드들
                 const maxOrder = Math.max(...filteredCards.map(c => c.order || 0), -1);
                 nonFilteredCards.forEach((c, i) => {
                     c.order = maxOrder + 1 + i;
                 });
                 
-                // state.cards를 order 기준으로 정렬
                 state.cards.sort((a, b) => {
                     return (a.order || 0) - (b.order || 0);
                 });
@@ -1394,43 +2155,6 @@ function setupDragAndDrop() {
                 saveState();
                 renderCards();
             }
-        });
-    });
-    
-    // 카드 그리드에도 drop 이벤트 추가 (빈 공간에 드롭 시)
-    const grid = document.getElementById('cardsGrid');
-    if (grid) {
-        grid.addEventListener('dragover', (e) => {
-            // 카드에 드래그 오버 중이면 무시
-            if (e.target.closest('.card')) {
-                return;
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = 'move';
-        });
-        
-        grid.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // 카드에 드롭된 경우는 무시 (이미 카드의 drop 이벤트에서 처리됨)
-            if (e.target.closest('.card')) {
-                return;
-            }
-            
-            // 모든 카드에서 드래그 오버 클래스 및 스타일 제거
-            document.querySelectorAll('.card').forEach(c => {
-                c.classList.remove('drag-over-top', 'drag-over-bottom');
-                c.style.borderTop = '';
-                c.style.borderBottom = '';
-                c.style.marginTop = '';
-                c.style.marginBottom = '';
-                c.style.transform = '';
-                c.style.transition = '';
-            });
-            
-            // 빈 공간에 드롭된 경우 아무것도 하지 않음 (드래그 취소)
         });
     }
 }
@@ -1461,8 +2185,8 @@ function updateQuestionsOnlyButton() {
     }
 }
 
-// 인쇄
-function printCards() {
+// 내보내기
+function exportCards() {
     // 현재 필터된 카드들 수집
     const filteredCards = state.cards.filter(card => {
         const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
@@ -1471,7 +2195,7 @@ function printCards() {
     });
     
     if (filteredCards.length === 0) {
-        alert('인쇄할 카드가 없습니다.');
+        alert('내보낼 카드가 없습니다.');
         return;
     }
     
@@ -1498,97 +2222,43 @@ function printCards() {
         });
     }
     
-    // 인쇄용 HTML 생성
-    const printWindow = window.open('', '_blank');
-    const printContent = `
-        <!DOCTYPE html>
-        <html lang="ko">
-        <head>
-            <meta charset="UTF-8">
-            <title>면접 질문 인쇄</title>
-            <style>
-                @page {
-                    margin: 15mm;
-                }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                    padding: 0;
-                    margin: 0;
-                    color: #333;
-                }
-                .cards-container {
-                    display: grid;
-                    grid-template-columns: repeat(3, 1fr);
-                    gap: 15px;
-                }
-                .print-card {
-                    border: 1px solid #e0e0e0;
-                    border-radius: 6px;
-                    padding: 12px;
-                    page-break-inside: avoid;
-                    break-inside: avoid;
-                    min-height: 150px;
-                    display: flex;
-                    flex-direction: column;
-                }
-                .print-card-question {
-                    font-weight: 600;
-                    font-size: 13px;
-                    margin-bottom: 8px;
-                    padding-bottom: 8px;
-                    border-bottom: 1px solid #e0e0e0;
-                    word-break: keep-all;
-                    overflow-wrap: normal;
-                    white-space: normal;
-                }
-                .print-card-questions-only .print-card-question {
-                    border-bottom: none;
-                    margin-bottom: 0;
-                    padding-bottom: 0;
-                }
-                .print-card-answer {
-                    color: #666;
-                    font-size: 11px;
-                    line-height: 1.5;
-                    flex-grow: 1;
-                    word-break: keep-all;
-                    overflow-wrap: break-word;
-                    white-space: pre-wrap;
-                }
-                @media print {
-                    body {
-                        padding: 0;
-                        margin: 0;
-                    }
-                    .print-card {
-                        page-break-inside: avoid;
-                        break-inside: avoid;
-                    }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="cards-container">
-                ${sortedCards.map((card) => `
-                    <div class="print-card ${state.questionsOnly ? 'print-card-questions-only' : ''}">
-                        <div class="print-card-question">${(card.question || '(질문 없음)').replace(/\n/g, '<br>')}</div>
-                        ${!state.questionsOnly ? `<div class="print-card-answer">${(card.answer || '(답변 없음)').replace(/\n/g, '<br>')}</div>` : ''}
-                    </div>
-                `).join('')}
-            </div>
-        </body>
-        </html>
-    `;
+    // TXT 파일로 내보내기
+    let txtContent = '';
     
-    printWindow.document.write(printContent);
-    printWindow.document.close();
+    if (state.questionsOnly) {
+        // 질문만 보기 모드: 질문만 내보내기, 카드 사이 빈 줄 1개
+        txtContent = sortedCards.map(card => {
+            return (card.question || '').trim();
+        }).join('\n\n');
+    } else {
+        // 일반 모드: 질문과 답변 모두 내보내기, 질문-답변 사이 빈 줄 0개, 카드 사이 빈 줄 1개
+        txtContent = sortedCards.map(card => {
+            const question = (card.question || '').trim();
+            const answer = (card.answer || '').trim();
+            return `${question}\n${answer}`;
+        }).join('\n\n');
+    }
     
-    // 인쇄 대화상자 열기
-    setTimeout(() => {
-        printWindow.print();
-        // 인쇄 후 창 닫기 (선택사항)
-        // printWindow.close();
-    }, 250);
+    // Blob 생성 및 다운로드
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // 파일명 생성 (현재 날짜 포함)
+    const dateStr = new Date().toISOString().split('T')[0];
+    const companyName = state.currentCompany === 'all' ? '전체' : 
+        (state.companies.find(c => c.id === state.currentCompany)?.name || '기업');
+    const folderName = state.currentFolder === 'all' ? '전체' : 
+        (state.folders.find(f => f.id === state.currentFolder)?.name || '폴더');
+    link.download = `면접질문_${companyName}_${folderName}_${dateStr}.txt`;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast('내보내기가 완료되었습니다.');
 }
 
 // 질문만 보기
@@ -1740,21 +2410,32 @@ function resizePracticeSettingsModal() {
 }
 
 function showToast(message) {
-    // 토스트 메시지 표시
-    let toast = document.getElementById('toast');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast';
-        toast.className = 'toast';
-        document.body.appendChild(toast);
+    // 기존 토스트가 있으면 제거
+    const existingToast = document.getElementById('toast');
+    if (existingToast) {
+        existingToast.remove();
     }
     
+    // 토스트 메시지 표시
+    const toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.className = 'toast';
     toast.textContent = message;
-    toast.classList.add('show');
+    document.body.appendChild(toast);
+    
+    // 약간의 지연 후 show 클래스 추가 (애니메이션을 위해)
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
     
     // 3초 후 자동으로 숨김
     setTimeout(() => {
         toast.classList.remove('show');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 300);
     }, 3000);
 }
 
@@ -1978,17 +2659,23 @@ function togglePause() {
     
     if (practiceState.paused) {
         // 일시정지 상태: 재생 아이콘(next-icon.svg)으로 변경
-        practiceState.pausedTime = Date.now() - practiceState.startTime;
+        stopTimer();
+        if (practiceState.startTime) {
+            practiceState.pausedTime = Date.now() - practiceState.startTime;
+        }
         if (pauseImg) {
             pauseImg.src = 'next-icon.svg';
         }
     } else {
         // 재생 상태: 일시정지 아이콘으로 변경
-        practiceState.startTime = Date.now() - practiceState.pausedTime;
-        practiceState.pausedTime = 0;
         if (pauseImg) {
             pauseImg.src = 'pause-icon.svg';
         }
+        if (practiceState.startTime) {
+            practiceState.startTime = Date.now() - practiceState.pausedTime;
+            practiceState.pausedTime = 0;
+        }
+        startTimer();
     }
 }
 
@@ -2054,6 +2741,90 @@ function showCardDetail(cardId) {
     
     const modal = document.getElementById('cardDetailModal');
     modal.classList.add('show');
+    
+    // 모달이 열릴 때마다 이벤트 리스너 다시 등록
+    setupCardDetailListeners();
+    
+    // 키보드 이벤트 리스너도 다시 등록
+    setupCardDetailKeyboardListeners();
+}
+
+function setupCardDetailKeyboardListeners() {
+    // 기존 키보드 이벤트 리스너 제거 (중복 방지)
+    document.removeEventListener('keydown', handleCardDetailKeyboard);
+    
+    // 새 키보드 이벤트 리스너 등록
+    document.addEventListener('keydown', handleCardDetailKeyboard, true);
+}
+
+function handleCardDetailKeyboard(e) {
+    const detailModal = document.getElementById('cardDetailModal');
+    if (!detailModal || !detailModal.classList.contains('show')) {
+        return;
+    }
+    
+    // 다른 모달이 열려있지 않은지 확인
+    const otherModals = document.querySelectorAll('.modal.show');
+    const isOnlyDetailModal = otherModals.length === 1 && otherModals[0] === detailModal;
+    
+    if (!isOnlyDetailModal) {
+        return;
+    }
+    
+    if (e.key === 'ArrowLeft' || e.key === '<' || e.keyCode === 37) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        prevCardDetail();
+        return false;
+    } else if (e.key === 'ArrowRight' || e.key === '>' || e.keyCode === 39) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        nextCardDetail();
+        return false;
+    }
+}
+
+function setupCardDetailListeners() {
+    // 기존 리스너 제거를 위해 클론 후 재등록
+    const closeBtn = document.getElementById('cardDetailClose');
+    const prevBtn = document.getElementById('prevCardBtn');
+    const nextBtn = document.getElementById('nextCardBtn');
+    
+    // 기존 이벤트 리스너 제거를 위해 새 요소로 교체
+    if (closeBtn) {
+        const newCloseBtn = closeBtn.cloneNode(true);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        newCloseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            document.getElementById('cardDetailModal').classList.remove('show');
+        });
+    }
+    
+    if (prevBtn) {
+        const newPrevBtn = prevBtn.cloneNode(true);
+        prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
+        newPrevBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            prevCardDetail();
+        });
+    }
+    
+    if (nextBtn) {
+        const newNextBtn = nextBtn.cloneNode(true);
+        nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
+        newNextBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            nextCardDetail();
+        });
+    }
 }
 
 function displayCardDetail() {
@@ -2121,23 +2892,46 @@ function showContextMenu(e, type, id) {
         menu.appendChild(createMenuItem('수정', () => editFolder(id)));
         menu.appendChild(createMenuItem('삭제', () => deleteFolder(id)));
     } else if (type === 'card') {
-        menu.appendChild(createMenuItem('보기', () => showCardDetail(id)));
-        const card = state.cards.find(c => c.id === id);
-        menu.appendChild(createMenuItem(card?.pinned ? '고정 해제' : '고정', () => toggleCardPin(id)));
-        menu.appendChild(createMenuItem('기업 복사', () => copyCardToCompany(id)));
-        menu.appendChild(createMenuItem('폴더 이동', () => moveCardToFolder(id)));
+        // 선택된 카드들 확인 (다중 선택 지원)
+        const selectedCardIds = state.selectedCards.size > 0 ? Array.from(state.selectedCards) : [id];
+        const isMultiple = selectedCardIds.length > 1;
+        
+        // 보기: 첫 번째 선택된 카드 또는 우클릭한 카드만
+        menu.appendChild(createMenuItem('보기', () => showCardDetail(selectedCardIds[0])));
+        
+        // 고정/해제: 모든 선택된 카드에 적용
+        const firstCard = state.cards.find(c => c.id === selectedCardIds[0]);
+        const allPinned = selectedCardIds.every(cardId => {
+            const card = state.cards.find(c => c.id === cardId);
+            return card?.pinned;
+        });
+        const pinText = allPinned ? '고정 해제' : '고정';
+        menu.appendChild(createMenuItem(pinText, () => {
+            selectedCardIds.forEach(cardId => toggleCardPin(cardId));
+        }));
+        
+        // 기업 복사: 모든 선택된 카드에 적용
+        menu.appendChild(createMenuItem('기업 복사', () => copyCardToCompany(selectedCardIds)));
+        
+        // 폴더 이동: 모든 선택된 카드에 적용
+        menu.appendChild(createMenuItem('폴더 이동', () => moveCardToFolder(selectedCardIds)));
+        
+        // 삭제: 모든 선택된 카드에 적용
         menu.appendChild(createMenuItem('삭제', () => {
-            // 카드를 휴지통으로 이동
-            const card = state.cards.find(c => c.id === id);
-            if (card) {
-                state.deletedCards.push(card);
-                state.cards = state.cards.filter(c => c.id !== id);
-                saveToHistory();
-                saveState();
-                renderCards();
-                updateCardCount();
-                updateTrashIcon();
-            }
+            // 선택된 모든 카드를 휴지통으로 이동
+            selectedCardIds.forEach(cardId => {
+                const card = state.cards.find(c => c.id === cardId);
+                if (card) {
+                    state.deletedCards.push(card);
+                    state.cards = state.cards.filter(c => c.id !== cardId);
+                }
+            });
+            state.selectedCards.clear();
+            saveToHistory();
+            saveState();
+            renderCards();
+            updateCardCount();
+            updateTrashIcon();
         }));
     }
     
@@ -2457,81 +3251,138 @@ function setupEventListeners() {
     document.getElementById('sortDropdown').addEventListener('change', changeSortMode);
     
     // 카드 추가/삭제
-    document.getElementById('addCardBtn').addEventListener('click', addCard);
-    document.getElementById('deleteCardBtn').addEventListener('click', deleteSelectedCards);
-    document.getElementById('trashBtn').addEventListener('click', showTrashModal);
-    document.getElementById('undoBtn').addEventListener('click', undo);
-    document.getElementById('redoBtn').addEventListener('click', redo);
+    const addCardBtn = document.getElementById('addCardBtn');
+    if (addCardBtn) {
+        addCardBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            addCard();
+        });
+    }
+    const deleteCardBtn = document.getElementById('deleteCardBtn');
+    if (deleteCardBtn) {
+        deleteCardBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            deleteSelectedCards();
+        });
+    }
+    // 휴지통은 setupGlobalEventListeners에서 처리됨
+    const undoBtn = document.getElementById('undoBtn');
+    if (undoBtn) {
+        undoBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            undo();
+        });
+    }
+    const redoBtn = document.getElementById('redoBtn');
+    if (redoBtn) {
+        redoBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            redo();
+        });
+    }
     
-    // 휴지통 모달
-    document.getElementById('trashClose').addEventListener('click', () => {
-        document.getElementById('trashModal').classList.remove('show');
-    });
-    document.getElementById('trashCancel').addEventListener('click', () => {
-        document.getElementById('trashModal').classList.remove('show');
-    });
+    // 휴지통 모달 - trashClose는 setupGlobalEventListeners에서 처리됨
     document.getElementById('trashEmptyBtn').addEventListener('click', emptyTrash);
     
-    // 폰트 선택
-    document.getElementById('fontBtn').addEventListener('click', showFontModal);
-    document.getElementById('fontClose').addEventListener('click', () => {
-        document.getElementById('fontModal').classList.remove('show');
-    });
-    document.getElementById('fontCancel').addEventListener('click', () => {
-        document.getElementById('fontModal').classList.remove('show');
-    });
+    // 폰트 선택 - fontBtn과 fontClose는 setupGlobalEventListeners에서 처리됨
     
-    // 폰트 옵션 클릭 (이벤트 위임)
-    document.getElementById('fontModal').addEventListener('click', (e) => {
-        const fontOption = e.target.closest('.font-option');
-        if (fontOption) {
-            const font = fontOption.dataset.font;
-            changeFont(font);
-            document.getElementById('fontModal').classList.remove('show');
+    // 폰트 추가 버튼 (+ 버튼)
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'fontAddBtn' || e.target.closest('#fontAddBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('fontFileInput').click();
         }
     });
     
-    // 질문만 보기
-    // 인쇄
-    document.getElementById('printBtn').addEventListener('click', printCards);
+    // 폰트 파일 선택 시 바로 업로드
+    document.getElementById('fontFileInput').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFontUpload();
+        }
+    });
     
-    document.getElementById('questionsOnlyBtn').addEventListener('click', toggleQuestionsOnly);
+    // 폰트 옵션 클릭 (이벤트 위임)
+    document.getElementById('fontOptionsList').addEventListener('click', (e) => {
+        const fontOption = e.target.closest('.font-option');
+        if (fontOption && !fontOption.classList.contains('font-add-btn')) {
+            const font = fontOption.dataset.font;
+            if (font) {
+                changeFont(font);
+                // 선택된 폰트 표시 업데이트
+                document.querySelectorAll('.font-option').forEach(option => {
+                    if (option.dataset.font === font) {
+                        option.classList.add('selected');
+                    } else {
+                        option.classList.remove('selected');
+                    }
+                });
+                // 모달은 X 버튼으로만 닫히도록 함
+            }
+        }
+    });
     
-    // 일괄 추가
-    document.getElementById('batchAddBtn').addEventListener('click', showBatchAddModal);
-    document.getElementById('batchAddSubmit').addEventListener('click', submitBatchAdd);
+    // 폰트 옵션 우클릭 메뉴 (이벤트 위임)
+    document.getElementById('fontOptionsList').addEventListener('contextmenu', (e) => {
+        const fontOption = e.target.closest('.font-option[data-font-id]');
+        if (fontOption && !fontOption.classList.contains('font-add-btn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const fontId = fontOption.dataset.fontId;
+            if (!fontId) return;
+            
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.innerHTML = '<div class="context-menu-item" data-action="delete-font">삭제</div>';
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
+            contextMenu.classList.add('show');
+            
+            // 메뉴 항목 클릭 이벤트
+            const deleteItem = contextMenu.querySelector('[data-action="delete-font"]');
+            const deleteHandler = () => {
+                deleteCustomFont(fontId);
+                contextMenu.classList.remove('show');
+                deleteItem.removeEventListener('click', deleteHandler);
+            };
+            deleteItem.addEventListener('click', deleteHandler);
+            
+            // 다른 곳 클릭 시 메뉴 닫기
+            const closeMenu = (e) => {
+                if (!contextMenu.contains(e.target)) {
+                    contextMenu.classList.remove('show');
+                    document.removeEventListener('click', closeMenu);
+                }
+            };
+            setTimeout(() => {
+                document.addEventListener('click', closeMenu);
+            }, 10);
+        }
+    });
+    
+    // 질문만 보기, 일괄 추가, 실전 연습은 setupGlobalEventListeners에서 처리됨
+    
+    // 내보내기
+    document.getElementById('exportBtn').addEventListener('click', exportCards);
+    // batchAddSubmit과 practiceStartBtn은 setupGlobalEventListeners에서 처리됨
     document.getElementById('batchAddCancel').addEventListener('click', () => {
         document.getElementById('batchAddModal').classList.remove('show');
     });
-    document.getElementById('batchAddClose').addEventListener('click', () => {
-        document.getElementById('batchAddModal').classList.remove('show');
-    });
-    
-    // 실전 연습
-    document.getElementById('practiceBtn').addEventListener('click', showPracticeSettings);
-    document.getElementById('practiceStartBtn').addEventListener('click', startPractice);
+    // batchAddClose는 setupGlobalEventListeners에서 처리됨
     document.getElementById('practiceSettingsCancel').addEventListener('click', () => {
         document.getElementById('practiceSettingsModal').classList.remove('show');
     });
-    document.getElementById('practiceSettingsClose').addEventListener('click', () => {
-        document.getElementById('practiceSettingsModal').classList.remove('show');
-    });
     
-    // 실전 연습 모달
-    document.getElementById('pauseBtn').addEventListener('click', togglePause);
-    document.getElementById('resetBtn').addEventListener('click', resetTimer);
-    document.getElementById('nextBtn').addEventListener('click', nextPracticeQuestion);
-    document.getElementById('practiceClose').addEventListener('click', () => {
-        stopTimer();
-        document.getElementById('practiceModal').classList.remove('show');
-    });
+    // 실전 연습 모달 버튼들은 setupGlobalEventListeners에서 처리됨
     
-    // 카드 상세 보기
-    document.getElementById('cardDetailClose').addEventListener('click', () => {
-        document.getElementById('cardDetailModal').classList.remove('show');
-    });
-    document.getElementById('prevCardBtn').addEventListener('click', prevCardDetail);
-    document.getElementById('nextCardBtn').addEventListener('click', nextCardDetail);
+    // 카드 상세 보기 이벤트 리스너는 showCardDetail에서 등록됨
     
     // 폴더 이동 모달
     document.getElementById('moveFolderClose').addEventListener('click', () => {
@@ -2552,6 +3403,12 @@ function setupEventListeners() {
     // 모달 외부 클릭 시 닫기
     document.querySelectorAll('.modal').forEach(modal => {
         modal.addEventListener('click', (e) => {
+            // X 버튼, 모달 내부 요소, 이전/다음 버튼을 클릭한 경우는 무시
+            if (e.target.closest('.modal-close') || 
+                e.target.closest('.modal-content') || 
+                e.target.closest('.detail-nav-btn')) {
+                return;
+            }
             if (e.target === modal) {
                 modal.classList.remove('show');
             }
@@ -2559,7 +3416,14 @@ function setupEventListeners() {
     });
     
     // 우클릭 메뉴 외부 클릭 시 닫기
-    document.addEventListener('click', () => {
+    document.addEventListener('click', (e) => {
+        // 헤더 버튼이나 카드 컨트롤 버튼을 클릭한 경우는 무시
+        if (e.target.closest('.header-actions') || 
+            e.target.closest('.action-btn') || 
+            e.target.closest('.card-controls') || 
+            e.target.closest('.card-control-btn')) {
+            return;
+        }
         document.getElementById('contextMenu').classList.remove('show');
     });
     
@@ -2573,6 +3437,15 @@ function setupEventListeners() {
             
             // 삭제 버튼(X)을 클릭한 경우 무시
             if (e.target.id === 'deleteCardBtn' || e.target.closest('#deleteCardBtn')) return;
+            
+            // 헤더 버튼들을 클릭한 경우 무시
+            if (e.target.closest('.header-actions') || e.target.closest('.action-btn')) return;
+            
+            // 카드 컨트롤 버튼들을 클릭한 경우 무시
+            if (e.target.closest('.card-controls') || e.target.closest('.card-control-btn')) return;
+            
+            // 모달 내부 요소나 모달 버튼을 클릭한 경우 무시
+            if (e.target.closest('.modal') || e.target.closest('.detail-nav-btn')) return;
             
             // 선택된 카드가 있으면 선택 해제
             if (state.selectedCards.size > 0) {
@@ -2592,10 +3465,7 @@ function setupEventListeners() {
             document.getElementById('contextMenu').classList.remove('show');
         }
         
-        // Delete: 선택된 카드 삭제
-        if (e.key === 'Delete' && state.selectedCards.size > 0) {
-            deleteSelectedCards();
-        }
+        // Delete: 선택된 카드 삭제 (setupGlobalEventListeners에서 처리됨)
         
         // Ctrl+A: 전체 선택
         if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
@@ -2611,11 +3481,25 @@ function setupEventListeners() {
         
         // 카드 상세 보기에서 < > 키
         const detailModal = document.getElementById('cardDetailModal');
-        if (detailModal.classList.contains('show')) {
-            if (e.key === 'ArrowLeft' || e.key === '<') {
-                prevCardDetail();
-            } else if (e.key === 'ArrowRight' || e.key === '>') {
-                nextCardDetail();
+        if (detailModal && detailModal.classList.contains('show')) {
+            // 다른 모달이 열려있지 않은지 확인
+            const otherModals = document.querySelectorAll('.modal.show');
+            const isOnlyDetailModal = otherModals.length === 1 && otherModals[0] === detailModal;
+            
+            if (isOnlyDetailModal) {
+                if (e.key === 'ArrowLeft' || e.key === '<' || e.keyCode === 37) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    prevCardDetail();
+                    return false;
+                } else if (e.key === 'ArrowRight' || e.key === '>' || e.keyCode === 39) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    nextCardDetail();
+                    return false;
+                }
             }
         }
     });
@@ -2625,6 +3509,9 @@ function setupEventListeners() {
 function showFontModal() {
     const modal = document.getElementById('fontModal');
     modal.classList.add('show');
+    
+    // 커스텀 폰트 목록 렌더링
+    renderFontOptions();
     
     // 현재 선택된 폰트 표시
     document.querySelectorAll('.font-option').forEach(option => {
@@ -2636,6 +3523,146 @@ function showFontModal() {
     });
 }
 
+function renderFontOptions() {
+    const fontOptionsList = document.getElementById('fontOptionsList');
+    
+    // 기본 폰트만
+    const defaultFont = { id: 'default', name: '기본', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif" };
+    
+    // 기본 폰트 HTML 생성
+    let html = `
+        <div class="font-option" data-font="${defaultFont.id}">
+            <div class="font-preview" style="font-family: ${defaultFont.fontFamily};">${defaultFont.name}</div>
+        </div>
+    `;
+    
+    // 커스텀 폰트 HTML 생성
+    html += state.customFonts.map(font => `
+        <div class="font-option" data-font="${font.id}" data-font-id="${font.id}">
+            <div class="font-preview" style="font-family: '${font.fontFamily}', sans-serif;">${font.name}</div>
+        </div>
+    `).join('');
+    
+    // + 버튼 추가
+    html += `
+        <div class="font-option font-add-btn" id="fontAddBtn" style="border: 2px dashed #ddd; display: flex; align-items: center; justify-content: center; cursor: pointer; min-height: 60px;">
+            <div style="font-size: 24px; color: #999;">+</div>
+        </div>
+    `;
+    
+    fontOptionsList.innerHTML = html;
+}
+
+function handleFontUpload() {
+    const fileInput = document.getElementById('fontFileInput');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        return;
+    }
+    
+    // 파일 확장자 확인
+    const validExtensions = ['.ttf', '.otf', '.woff', '.woff2'];
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+    
+    if (!hasValidExtension) {
+        alert('TTF, OTF, WOFF, WOFF2 파일만 업로드 가능합니다.');
+        return;
+    }
+    
+    // 파일을 base64로 변환
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const base64Data = e.target.result;
+        const fontName = file.name.replace(/\.[^/.]+$/, ''); // 확장자 제거
+        const fontId = 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const fontFamily = fontName.replace(/[^a-zA-Z0-9가-힣]/g, ''); // 특수문자 제거
+        
+        // 폰트 객체 생성
+        const customFont = {
+            id: fontId,
+            name: fontName,
+            fontFamily: fontFamily,
+            data: base64Data,
+            mimeType: file.type || 'font/ttf'
+        };
+        
+        // 커스텀 폰트 로드
+        loadCustomFont(customFont);
+        
+        // state에 추가
+        state.customFonts.push(customFont);
+        saveState();
+        
+        // 폰트 목록 다시 렌더링
+        renderFontOptions();
+        
+        // 파일 입력 초기화
+        fileInput.value = '';
+        
+        showToast('폰트가 추가되었습니다.');
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+function loadCustomFont(font) {
+    // 이미 로드된 폰트인지 확인
+    if (document.querySelector(`style[data-font-id="${font.id}"]`)) {
+        return;
+    }
+    
+    // @font-face 스타일 생성
+    const style = document.createElement('style');
+    style.setAttribute('data-font-id', font.id);
+    
+    // MIME 타입에 따라 format 지정
+    let format = 'truetype';
+    if (font.mimeType) {
+        if (font.mimeType.includes('woff2')) format = 'woff2';
+        else if (font.mimeType.includes('woff')) format = 'woff';
+        else if (font.mimeType.includes('opentype') || font.mimeType.includes('otf')) format = 'opentype';
+    } else if (font.data.includes('data:font/woff2')) format = 'woff2';
+    else if (font.data.includes('data:font/woff')) format = 'woff';
+    else if (font.data.includes('data:font/otf')) format = 'opentype';
+    
+    style.textContent = `
+        @font-face {
+            font-family: '${font.fontFamily}';
+            src: url('${font.data}') format('${format}');
+            font-display: swap;
+        }
+    `;
+    
+    document.head.appendChild(style);
+}
+
+function deleteCustomFont(fontId) {
+    if (!confirm('이 폰트를 삭제하시겠습니까?')) {
+        return;
+    }
+    
+    // state에서 제거
+    state.customFonts = state.customFonts.filter(font => font.id !== fontId);
+    
+    // 현재 사용 중인 폰트가 삭제된 폰트면 기본 폰트로 변경
+    if (state.fontFamily === fontId) {
+        state.fontFamily = 'default';
+        applyFont('default');
+    }
+    
+    // 스타일에서 제거
+    const style = document.querySelector(`style[data-font-id="${fontId}"]`);
+    if (style) {
+        style.remove();
+    }
+    
+    saveState();
+    renderFontOptions();
+    showToast('폰트가 삭제되었습니다.');
+}
+
 function changeFont(font) {
     state.fontFamily = font;
     applyFont(font);
@@ -2645,28 +3672,35 @@ function changeFont(font) {
 function applyFont(font) {
     let fontFamily;
     
-    switch(font) {
-        case 'nanum':
-            fontFamily = "'Nanum Gothic', sans-serif";
-            break;
-        case 'malgun':
-            fontFamily = "'Malgun Gothic', sans-serif";
-            break;
-        case 'noto':
-            fontFamily = "'Noto Sans KR', sans-serif";
-            break;
-        case 'pretendard':
-            fontFamily = "'Pretendard', sans-serif";
-            break;
-        default:
+    if (font.startsWith('custom_')) {
+        // 커스텀 폰트
+        const customFont = state.customFonts.find(f => f.id === font);
+        if (customFont) {
+            fontFamily = `'${customFont.fontFamily}', sans-serif`;
+        } else {
             fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif";
+        }
+    } else {
+        // 기본 폰트만
+        fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif";
     }
     
     // CSS 변수를 사용하여 모든 요소에 폰트 적용
     document.documentElement.style.setProperty('--app-font-family', fontFamily);
     
-    // body에도 직접 적용 (상속 보장)
+    // body와 html에 직접 적용하여 상속 보장
+    document.documentElement.style.fontFamily = fontFamily;
     document.body.style.fontFamily = fontFamily;
+    
+    // 헤더 요소들에 직접 적용 (상속이 제대로 되지 않는 경우 대비)
+    requestAnimationFrame(() => {
+        const headerElements = document.querySelectorAll('.header, .header *');
+        headerElements.forEach(el => {
+            if (el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE') {
+                el.style.fontFamily = fontFamily;
+            }
+        });
+    });
 }
 
 // 초기화 실행

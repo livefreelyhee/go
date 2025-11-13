@@ -17,7 +17,7 @@
             </div>
             <div class="header-actions">
                 <button class="action-btn" id="fontBtn">폰트</button>
-                <button class="action-btn" id="printBtn">인쇄</button>
+                <button class="action-btn" id="exportBtn">내보내기</button>
                 <button class="action-btn" id="questionsOnlyBtn">질문만 보기</button>
                 <button class="action-btn" id="batchAddBtn">일괄 추가</button>
                 <button class="action-btn" id="practiceBtn">실전 연습</button>
@@ -66,7 +66,6 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2>일괄 추가</h2>
-                <button class="modal-close" id="batchAddClose">×</button>
             </div>
             <div class="modal-body">
                 <textarea id="batchAddTextarea" placeholder="질문을 입력하세요 (줄바꿈으로 구분)"></textarea>
@@ -83,7 +82,6 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2>실전 연습 설정</h2>
-                <button class="modal-close" id="practiceSettingsClose">×</button>
             </div>
             <div class="modal-body">
                 <div class="practice-mode-selector">
@@ -118,13 +116,9 @@
                 <div class="practice-controls">
                     <div class="stopwatch" id="stopwatch">00:00</div>
                     <div class="practice-buttons">
-                        <button class="practice-btn pause-btn" id="pauseBtn">
-                            <img src="pause-icon.svg" alt="일시정지" class="icon-img">
-                        </button>
-                        <button class="practice-btn reset-btn" id="resetBtn">
-                            <img src="reset-icon.svg" alt="리셋" class="icon-img">
-                        </button>
-                        <button class="practice-btn next-btn" id="nextBtn">다음</button>
+                        <button class="practice-btn" id="pauseBtn"><img src="pause-icon.svg" alt="일시정지"></button>
+                        <button class="practice-btn" id="resetBtn"><img src="reset-icon.svg" alt="리셋"></button>
+                        <button class="practice-btn" id="nextBtn">다음</button>
                     </div>
                 </div>
             </div>
@@ -133,6 +127,7 @@
 
     <!-- 카드 상세 보기 모달 -->
     <div class="modal" id="cardDetailModal">
+        <button class="detail-nav-btn detail-nav-prev" id="prevCardBtn">&lt;</button>
         <div class="modal-content card-detail-modal">
             <div class="modal-header">
                 <button class="modal-close" id="cardDetailClose">×</button>
@@ -142,8 +137,7 @@
                 <div class="detail-answer" id="detailAnswer"></div>
             </div>
         </div>
-        <button class="detail-nav-btn detail-nav-prev" id="prevCardBtn">◀</button>
-        <button class="detail-nav-btn detail-nav-next" id="nextCardBtn">▶</button>
+        <button class="detail-nav-btn detail-nav-next" id="nextCardBtn">&gt;</button>
     </div>
 
     <!-- 폴더 이동 모달 -->
@@ -180,56 +174,30 @@
 
     <!-- 휴지통 모달 -->
     <div class="modal" id="trashModal">
-        <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-content">
             <div class="modal-header">
                 <h2>휴지통</h2>
                 <button class="modal-close" id="trashClose">×</button>
             </div>
             <div class="modal-body">
-                <div id="trashCardList" style="display: flex; flex-direction: column; gap: 10px;">
-                    <!-- 삭제된 카드 목록이 여기에 표시됨 -->
-                </div>
+                <div id="trashCardList"></div>
             </div>
             <div class="modal-footer">
-                <button class="modal-btn" id="trashEmptyBtn">휴지통 비우기</button>
-                <button class="modal-btn" id="trashCancel">닫기</button>
+                <button class="modal-btn" id="trashEmptyBtn">전체 삭제</button>
             </div>
         </div>
     </div>
 
-    <!-- 폰트 선택 모달 -->
+    <!-- 폰트 모달 -->
     <div class="modal" id="fontModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>폰트 선택</h2>
+                <h2>폰트 설정</h2>
                 <button class="modal-close" id="fontClose">×</button>
             </div>
             <div class="modal-body">
-                <div class="font-options">
-                    <div class="font-option" data-font="default">
-                        <div class="font-preview" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;">기본 폰트</div>
-                        <div class="font-name">기본 폰트</div>
-                    </div>
-                    <div class="font-option" data-font="nanum">
-                        <div class="font-preview" style="font-family: 'Nanum Gothic', sans-serif;">나눔고딕</div>
-                        <div class="font-name">나눔고딕</div>
-                    </div>
-                    <div class="font-option" data-font="malgun">
-                        <div class="font-preview" style="font-family: 'Malgun Gothic', sans-serif;">맑은 고딕</div>
-                        <div class="font-name">맑은 고딕</div>
-                    </div>
-                    <div class="font-option" data-font="noto">
-                        <div class="font-preview" style="font-family: 'Noto Sans KR', sans-serif;">Noto Sans KR</div>
-                        <div class="font-name">Noto Sans KR</div>
-                    </div>
-                    <div class="font-option" data-font="pretendard">
-                        <div class="font-preview" style="font-family: 'Pretendard', sans-serif;">Pretendard</div>
-                        <div class="font-name">Pretendard</div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-btn" id="fontCancel">닫기</button>
+                <div id="fontOptionsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px;"></div>
+                <input type="file" id="fontFileInput" accept=".ttf,.otf,.woff,.woff2" style="display: none;">
             </div>
         </div>
     </div>
