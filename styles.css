@@ -40,6 +40,10 @@ body {
     display: flex;
     align-items: center;
     gap: 5px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: thin;
+    scrollbar-color: #888 #f1f1f1;
 }
 
 .company-tab {
@@ -82,6 +86,8 @@ body {
 .header-actions {
     display: flex;
     gap: 10px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .action-btn {
@@ -143,6 +149,8 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .card-control-btn {
@@ -773,22 +781,23 @@ body {
     background: #cc0000;
 }
 
-/* 스크롤바 스타일 */
+/* 스크롤바 숨김 */
 .folder-section::-webkit-scrollbar {
-    height: 4px;
+    display: none;
 }
 
-.folder-section::-webkit-scrollbar-track {
-    background: #f1f1f1;
+.folder-section {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 
-.folder-section::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 2px;
+.company-tabs::-webkit-scrollbar {
+    display: none;
 }
 
-.folder-section::-webkit-scrollbar-thumb:hover {
-    background: #555;
+.company-tabs {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 
 /* 토스트 알림 */
