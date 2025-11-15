@@ -15,6 +15,7 @@ let state = {
     sortMode: 'default',
     questionsOnly: false,
     selectedCards: new Set(),
+    selectedFolders: new Set(),
     history: [],
     historyIndex: -1,
     fontFamily: 'default',
@@ -171,6 +172,7 @@ function saveState() {
     const stateToSave = {
         ...state,
         selectedCards: Array.from(state.selectedCards),
+        selectedFolders: Array.from(state.selectedFolders),
         history: state.history.slice(0, state.historyIndex + 1)
     };
     localStorage.setItem('interviewApp', JSON.stringify(stateToSave));
@@ -189,6 +191,7 @@ function loadState() {
         state.sortMode = loaded.sortMode || 'default';
         state.questionsOnly = loaded.questionsOnly || false;
         state.selectedCards = new Set(loaded.selectedCards || []);
+        state.selectedFolders = new Set(loaded.selectedFolders || []);
         state.history = loaded.history || [];
         state.historyIndex = loaded.historyIndex !== undefined ? loaded.historyIndex : -1;
         state.fontFamily = loaded.fontFamily || 'default';
@@ -329,8 +332,15 @@ function renderFolders() {
     // 현재 기업에 맞는 폴더만 표시:
     // - companyId가 'all'이면 모든 기업에 표시
     // - companyId가 현재 기업 ID와 같으면 표시
+    // - '전체' 탭에서는 모든 폴더 표시 (companyId가 'all'이거나 특정 기업 ID)
     const visibleFolders = state.folders.filter(folder => {
-        return folder.companyId === 'all' || folder.companyId === state.currentCompany;
+        if (state.currentCompany === 'all') {
+            // '전체' 탭에서는 모든 폴더 표시
+            return true;
+        } else {
+            // 특정 기업 탭에서는 'all' 폴더와 해당 기업 폴더만 표시
+            return folder.companyId === 'all' || folder.companyId === state.currentCompany;
+        }
     });
     
     visibleFolders.forEach(folder => {
@@ -341,7 +351,12 @@ function renderFolders() {
         if (state.currentFolder === folder.id) {
             btn.classList.add('active');
         }
-        btn.addEventListener('click', () => switchFolder(folder.id));
+        if (state.selectedFolders.has(folder.id)) {
+            btn.classList.add('selected');
+        }
+        btn.addEventListener('click', (e) => {
+            handleFolderClick(e, folder.id);
+        }, true);
         btn.addEventListener('dblclick', () => editFolder(folder.id));
         btn.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -356,6 +371,12 @@ function renderFolders() {
     } else {
         allFolder.classList.remove('active');
     }
+    // 전체 폴더 선택 상태 업데이트
+    if (state.selectedFolders.has('all')) {
+        allFolder.classList.add('selected');
+    } else {
+        allFolder.classList.remove('selected');
+    }
     
     // 정렬 모드 업데이트
     sortDropdown.value = state.sortMode;
@@ -367,11 +388,28 @@ function renderCards() {
     grid.innerHTML = '';
     
     // 필터링
+    console.log('renderCards called - selectedFolders:', Array.from(state.selectedFolders), 'currentFolder:', state.currentFolder, 'stack:', new Error().stack);
     let filteredCards = state.cards.filter(card => {
         const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-        const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
-        return companyMatch && folderMatch;
+        // 선택된 폴더가 있으면 선택된 폴더들의 카드를 모두 보여줌
+        let folderMatch;
+        if (state.selectedFolders.size > 0) {
+            // 'all' 폴더가 선택되어 있으면 모든 카드 표시
+            if (state.selectedFolders.has('all')) {
+                folderMatch = true;
+            } else {
+                folderMatch = state.selectedFolders.has(card.folderId);
+            }
+        } else {
+            folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+        }
+        const result = companyMatch && folderMatch;
+        if (result) {
+            console.log('Card matched:', card.id, 'folderId:', card.folderId, 'folderMatch:', folderMatch);
+        }
+        return result;
     });
+    console.log('filteredCards count:', filteredCards.length);
     
     // 정렬
     if (state.sortMode === 'default') {
@@ -397,6 +435,13 @@ function renderCards() {
             const lengthB = ((b.question || '').length + (b.answer || '').length);
             return lengthA - lengthB;
         });
+    } else if (state.sortMode === 'answerLength') {
+        // 답변 글자수 정렬 (답변 글자수만, 작은 것부터)
+        filteredCards.sort((a, b) => {
+            const lengthA = (a.answer || '').length;
+            const lengthB = (b.answer || '').length;
+            return lengthA - lengthB;
+        });
     }
     
     // 질문만 보기 모드
@@ -407,10 +452,12 @@ function renderCards() {
     }
     
     // 카드 생성
+    console.log('About to create', filteredCards.length, 'cards');
     filteredCards.forEach((card, index) => {
         const cardEl = createCardElement(card);
         grid.appendChild(cardEl);
     });
+    console.log('Created cards, grid.children.length:', grid.children.length);
     
     // 드래그 앤 드롭 설정 (기본 정렬 모드에서만)
     if (state.sortMode === 'default') {
@@ -444,6 +491,18 @@ function createCardElement(card) {
     }
     questionEl.dataset.placeholder = '질문을 입력하세요';
     questionEl.spellcheck = false;
+    // Ctrl+A: 질문 텍스트 전체 선택
+    questionEl.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            e.stopPropagation();
+            const range = document.createRange();
+            range.selectNodeContents(questionEl);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+    });
     questionEl.addEventListener('blur', () => {
         // innerText를 사용하면 줄바꿈이 자동으로 \n으로 변환됨
         // innerText가 없으면 textContent 사용 (구형 브라우저 대응)
@@ -486,6 +545,18 @@ function createCardElement(card) {
     }
     answerEl.dataset.placeholder = '답변을 입력하세요';
     answerEl.spellcheck = false;
+    // Ctrl+A: 답변 텍스트 전체 선택
+    answerEl.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            e.stopPropagation();
+            const range = document.createRange();
+            range.selectNodeContents(answerEl);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+    });
     answerEl.addEventListener('blur', () => {
         // innerText를 사용하면 줄바꿈이 자동으로 \n으로 변환됨
         // innerText가 없으면 textContent 사용 (구형 브라우저 대응)
@@ -635,6 +706,7 @@ function switchCompany(companyId) {
     state.currentCompany = companyId;
     saveState();
     renderCompanies();
+    renderFolders(); // 기업 전환 시 폴더 목록도 업데이트
     renderCards();
     updateCardCount();
 }
@@ -873,8 +945,103 @@ function duplicateCompany(companyId) {
 }
 
 // 폴더 관리
+function handleFolderClick(e, folderId) {
+    // 이벤트 전파 방지 (다른 이벤트 핸들러와 충돌 방지)
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    
+    // '전체' 폴더는 중복 선택 불가, 항상 단일 선택만 가능
+    if (folderId === 'all') {
+        state.selectedFolders.clear();
+        state.currentFolder = 'all';
+        saveState();
+        renderFolders();
+        renderCards();
+        updateCardCount();
+        return;
+    }
+    
+    // 디버깅: 키 상태 확인
+    console.log('Folder click:', folderId, 'shiftKey:', e.shiftKey, 'ctrlKey:', e.ctrlKey, 'metaKey:', e.metaKey);
+    
+    // Shift 키: 범위 선택
+    if (e.shiftKey) {
+        // 범위 선택
+        const folderIds = Array.from(document.querySelectorAll('.folder-btn:not([data-folder="all"])')).map(btn => btn.dataset.folder);
+        const currentIndex = folderIds.indexOf(folderId);
+        const lastSelected = Array.from(state.selectedFolders).pop();
+        const lastIndex = lastSelected ? folderIds.indexOf(lastSelected) : -1;
+        
+        if (lastIndex >= 0) {
+            const start = Math.min(currentIndex, lastIndex);
+            const end = Math.max(currentIndex, lastIndex);
+            for (let i = start; i <= end; i++) {
+                if (folderIds[i]) {
+                    state.selectedFolders.add(folderIds[i]);
+                }
+            }
+        } else {
+            state.selectedFolders.add(folderId);
+        }
+        // 마지막 선택된 폴더를 currentFolder로 설정
+        state.currentFolder = folderId;
+    } else if (e.ctrlKey || e.metaKey) {
+        // 개별 토글
+        console.log('Ctrl/Meta key pressed, current selectedFolders:', Array.from(state.selectedFolders));
+        if (state.selectedFolders.has(folderId)) {
+            console.log('Removing folder from selection');
+            state.selectedFolders.delete(folderId);
+            // 선택 해제된 폴더가 currentFolder였고 다른 선택된 폴더가 있으면 마지막 선택으로 변경
+            if (state.currentFolder === folderId && state.selectedFolders.size > 0) {
+                state.currentFolder = Array.from(state.selectedFolders).pop();
+            } else if (state.selectedFolders.size === 0) {
+                state.currentFolder = 'all';
+            }
+        } else {
+            console.log('Adding folder to selection');
+            state.selectedFolders.add(folderId);
+            // 마지막 선택된 폴더를 currentFolder로 설정
+            state.currentFolder = folderId;
+        }
+        console.log('After Ctrl/Meta, selectedFolders:', Array.from(state.selectedFolders));
+    } else {
+        // 일반 클릭: 이미 선택된 폴더를 다시 클릭하면 선택 해제
+        if (state.selectedFolders.has(folderId)) {
+            // 선택된 폴더를 다시 클릭한 경우
+            if (state.selectedFolders.size === 1) {
+                // 단일 선택 상태면 모두 해제하고 'all'로
+                state.selectedFolders.clear();
+                state.currentFolder = 'all';
+            } else {
+                // 다중 선택 상태면 해당 폴더만 해제
+                state.selectedFolders.delete(folderId);
+                // 해제된 폴더가 currentFolder였으면 다른 선택된 폴더로 변경
+                if (state.currentFolder === folderId) {
+                    state.currentFolder = Array.from(state.selectedFolders).pop() || 'all';
+                }
+            }
+        } else {
+            // 선택되지 않은 폴더를 클릭한 경우: 기존 선택 해제하고 새로 선택
+            // 단, 이미 다중 선택 상태였다면 선택을 유지하지 않고 새로 선택
+            state.selectedFolders.clear();
+            state.selectedFolders.add(folderId);
+            state.currentFolder = folderId;
+        }
+    }
+    
+    console.log('After handleFolderClick - selectedFolders:', Array.from(state.selectedFolders), 'currentFolder:', state.currentFolder);
+    
+    saveState();
+    renderFolders();
+    // renderFolders() 후에도 selectedFolders가 유지되는지 확인
+    console.log('Before renderCards - selectedFolders:', Array.from(state.selectedFolders), 'currentFolder:', state.currentFolder);
+    renderCards();
+    updateCardCount();
+}
+
 function switchFolder(folderId) {
     state.currentFolder = folderId;
+    // 일반 switchFolder 호출 시에는 선택 상태 초기화하지 않음 (handleFolderClick에서 처리)
     saveState();
     renderFolders();
     renderCards();
@@ -884,7 +1051,8 @@ function switchFolder(folderId) {
 function addFolder() {
     const newId = generateId();
     // 현재 기업에 따라 폴더 companyId 설정
-    // 'all'이면 모든 기업에 표시, 특정 기업이면 그 기업에만 표시
+    // - '전체' 탭에서 추가: companyId = 'all' → 모든 기업 탭에 표시됨
+    // - 특정 기업 탭에서 추가: companyId = 특정 기업 ID → '전체' 탭과 해당 기업 탭에만 표시됨 (다른 기업 탭에는 표시 안 됨)
     const newFolder = { 
         id: newId, 
         name: '',
@@ -2190,7 +2358,18 @@ function exportCards() {
     // 현재 필터된 카드들 수집
     const filteredCards = state.cards.filter(card => {
         const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-        const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+        // 선택된 폴더가 있으면 선택된 폴더들의 카드를 모두 내보내기
+        let folderMatch;
+        if (state.selectedFolders.size > 0) {
+            // 'all' 폴더가 선택되어 있으면 모든 카드 내보내기
+            if (state.selectedFolders.has('all')) {
+                folderMatch = true;
+            } else {
+                folderMatch = state.selectedFolders.has(card.folderId);
+            }
+        } else {
+            folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+        }
         return companyMatch && folderMatch;
     });
     
@@ -2218,6 +2397,12 @@ function exportCards() {
         sortedCards.sort((a, b) => {
             const lengthA = ((a.question || '').length + (a.answer || '').length);
             const lengthB = ((b.question || '').length + (b.answer || '').length);
+            return lengthA - lengthB;
+        });
+    } else if (state.sortMode === 'answerLength') {
+        sortedCards.sort((a, b) => {
+            const lengthA = (a.answer || '').length;
+            const lengthB = (b.answer || '').length;
             return lengthA - lengthB;
         });
     }
@@ -2443,9 +2628,17 @@ function renderFolderCounts() {
     const container = document.getElementById('folderCounts');
     container.innerHTML = '';
     
+    // 폴더별 개수 정하기 모드는 전체 폴더 표시
     // 현재 기업에 표시되는 폴더만 필터링
+    // '전체' 탭에서는 모든 폴더 표시, 특정 기업 탭에서는 'all' 폴더와 해당 기업 폴더만 표시
     const visibleFolders = state.folders.filter(folder => {
-        return folder.companyId === 'all' || folder.companyId === state.currentCompany;
+        if (state.currentCompany === 'all') {
+            // '전체' 탭에서는 모든 폴더 표시
+            return true;
+        } else {
+            // 특정 기업 탭에서는 'all' 폴더와 해당 기업 폴더만 표시
+            return folder.companyId === 'all' || folder.companyId === state.currentCompany;
+        }
     });
     
     visibleFolders.forEach(folder => {
@@ -2517,7 +2710,18 @@ function startPractice() {
         // 완전 랜덤
         questions = state.cards.filter(card => {
             const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-            const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+            // 선택된 폴더가 있으면 선택된 폴더들의 카드를 모두 사용
+            let folderMatch;
+            if (state.selectedFolders.size > 0) {
+                // 'all' 폴더가 선택되어 있으면 모든 카드 사용
+                if (state.selectedFolders.has('all')) {
+                    folderMatch = true;
+                } else {
+                    folderMatch = state.selectedFolders.has(card.folderId);
+                }
+            } else {
+                folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+            }
             return companyMatch && folderMatch && card.question.trim();
         });
         shuffleArray(questions);
@@ -2730,6 +2934,12 @@ function showCardDetail(cardId) {
         detailCards.sort((a, b) => {
             const lengthA = ((a.question || '').length + (a.answer || '').length);
             const lengthB = ((b.question || '').length + (b.answer || '').length);
+            return lengthA - lengthB;
+        });
+    } else if (state.sortMode === 'answerLength') {
+        detailCards.sort((a, b) => {
+            const lengthA = (a.answer || '').length;
+            const lengthB = (b.answer || '').length;
             return lengthA - lengthB;
         });
     }
@@ -2980,7 +3190,18 @@ function createMenuItem(text, onClick) {
 function updateCardCount() {
     const count = state.cards.filter(card => {
         const companyMatch = state.currentCompany === 'all' || card.companyId === state.currentCompany;
-        const folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+        // 선택된 폴더가 있으면 선택된 폴더들의 카드를 모두 카운트
+        let folderMatch;
+        if (state.selectedFolders.size > 0) {
+            // 'all' 폴더가 선택되어 있으면 모든 카드 카운트
+            if (state.selectedFolders.has('all')) {
+                folderMatch = true;
+            } else {
+                folderMatch = state.selectedFolders.has(card.folderId);
+            }
+        } else {
+            folderMatch = state.currentFolder === 'all' || card.folderId === state.currentFolder;
+        }
         return companyMatch && folderMatch;
     }).length;
     document.getElementById('cardCount').textContent = count + '개';
@@ -3245,7 +3466,9 @@ function setupEventListeners() {
     
     // 전체 탭/폴더
     document.querySelector('[data-company="all"]').addEventListener('click', () => switchCompany('all'));
-    document.querySelector('[data-folder="all"]').addEventListener('click', () => switchFolder('all'));
+    document.querySelector('[data-folder="all"]').addEventListener('click', (e) => {
+        handleFolderClick(e, 'all');
+    }, true);
     
     // 정렬
     document.getElementById('sortDropdown').addEventListener('change', changeSortMode);

@@ -130,6 +130,11 @@ body {
     min-width: fit-content;
 }
 
+.folder-btn.selected {
+    background: #000;
+    color: white;
+}
+
 .folder-btn.active {
     background: #000;
     color: white;
@@ -328,7 +333,9 @@ body {
     margin-bottom: 12px;
     min-height: 24px;
     outline: none;
-    word-wrap: break-word;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    white-space: normal;
     user-select: text;
     -webkit-user-select: text;
     -moz-user-select: text;
@@ -346,7 +353,9 @@ body {
     color: #666;
     min-height: 40px;
     outline: none;
-    word-wrap: break-word;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    white-space: normal;
     flex-grow: 1;
     user-select: text;
     -webkit-user-select: text;
